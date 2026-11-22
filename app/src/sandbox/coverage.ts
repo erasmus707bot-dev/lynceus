@@ -13,12 +13,20 @@ export function lineCoverage(cov: FileCoverage | null | undefined, n: number): L
   return { state: 'miss', tests: [] };
 }
 
-/** Line numbers where a stretch of "not run" statements begins (each gets one visible label). */
-export function missStarts(cov: FileCoverage | null | undefined): Set<number> {
+/**
+ * Line numbers where a stretch of "not run" statements begins (each gets one visible label).
+ * `breaks` (e.g. function header lines) start a new stretch; `skip` lines (e.g. unreachable code,
+ * which has its own label) are left out and also end a stretch.
+ */
+export function missStarts(cov: FileCoverage | null | undefined, breaks: number[] = [], skip: (n: number) => boolean = () => false): Set<number> {
   const out = new Set<number>();
   if (!cov) return out;
   let prevMiss = false;
+  let prev = 0;
   for (const n of [...cov.statements].sort((a, b) => a - b)) {
+    if (breaks.some((b) => prev < b && b <= n)) prevMiss = false;
+    prev = n;
+    if (skip(n)) { prevMiss = false; continue; }
     const miss = lineCoverage(cov, n)?.state === 'miss';
     if (miss && !prevMiss) out.add(n);
     prevMiss = miss;

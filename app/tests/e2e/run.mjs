@@ -1,4 +1,4 @@
-// Lynceus end-to-end checks (Phases 1-3) against the production build.
+// Lynceus end-to-end checks (Phases 1-4) against the production build.
 // Usage: npm run build && npm run e2e      (needs Playwright + Chromium installed)
 import { createRequire } from 'module';
 import http from 'http';
@@ -330,6 +330,140 @@ try {
     const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     check('phone: Code tab has no page-level horizontal scroll', over <= 0, `${over}px`);
     await p.screenshot({ path: path.join(ROOT, '..', 'tests', 'e2e', 'phone-code.png') });
+    await p.close();
+  }
+
+  // ================= Phase 4: queue, risk breakdown, diff, passes =================
+  const SHOP = [
+    "export function busy(items, log) {",            // 1
+    "  let total = 0;",                               // 2
+    "  for (const it of items) {",                    // 3
+    "    if (it.qty > 0) {",                          // 4
+    "      if (it.price > 100) {",                    // 5
+    "        log.write(it);",                         // 6
+    "      } else if (it.price < 0) {",               // 7
+    "        throw new Error('bad price');",          // 8
+    "      }",                                        // 9
+    "      total += it.qty * it.price;",              // 10
+    "    }",                                          // 11
+    "  }",                                            // 12
+    "  return total;",                                // 13
+    "  console.log('never');",                        // 14
+    "}",                                              // 15
+    "export function formatTotal(n) {",               // 16
+    "  return helper(n).toFixed(2);",                 // 17
+    "}",                                              // 18
+    "export function unusedThing(a) {",               // 19
+    "  return a + 1;",                                // 20
+    "}",                                              // 21
+    "export const add = (a, b) => a + b;",            // 22
+    "export const sub = (a, b) => a - b;",            // 23
+    "export const neg = (a) => -a;",                  // 24
+    "",
+  ].join('\n');
+  const SHOP_TEST = "import { busy, add } from './shop.js';\ntest('adds', () => { expect(add(1, 2)).toBe(3); });\ntest('busy total', () => { expect(busy([{ qty: 1, price: 5 }], { write() {} })).toBe(5); });\n";
+  const SHOP_DIFF = [
+    'diff --git a/src/shop.js b/src/shop.js', '--- a/src/shop.js', '+++ b/src/shop.js',
+    '@@ -16,3 +16,3 @@', ' export function formatTotal(n) {', '-  return n.toFixed(2);', '+  return helper(n).toFixed(2);', ' }',
+    '@@ -40,2 +40,2 @@', ' function notInTheFile() {', '-  return 1;', '+  return 2;',
+    '',
+  ].join('\n');
+  const SHOP_SPEC = '- Format the total with two decimals\n- Add two numbers\n';
+  async function loadShop(width = 1000) {
+    const p = await ctx.newPage();
+    await p.setViewportSize({ width, height: 800 });
+    await p.goto(APP);
+    await p.evaluate(() => { const d = document.querySelector('details:has(#diff)'); if (d) d.open = true; });
+    await p.locator('#diff').fill(SHOP_DIFF);
+    await p.locator('#spec').fill(SHOP_SPEC);
+    await p.getByTestId('file-input').setInputFiles([file('src/shop.js', SHOP), file('src/shop.test.js', SHOP_TEST)]);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    const nav = width >= 760 ? p.locator('nav.inline') : p.locator('nav.tabbar:not(.inline)');
+    return { p, nav };
+  }
+  {
+    const { p, nav } = await loadShop();
+    await nav.getByRole('button', { name: 'Queue' }).click();
+    await p.getByTestId('queue-item').first().waitFor({ timeout: 30000 });
+    const names = [];
+    for (const li of await p.locator('ol.top [data-testid="queue-item"]').all()) names.push(await li.getAttribute('data-fn'));
+    const all = await p.getByTestId('queue-item').count();
+    check('queue: top list holds the 5 riskiest, the rest below', names.length === 5 && all > 5 && (await p.getByRole('heading', { name: 'All other functions' }).count()) === 1, `${names.length} top of ${all}`);
+    check('queue: the complex, nested, side-effecting function ranks first', names[0] === 'busy', names.join(', '));
+    check('queue: says plainly when there is no test evidence', /No test evidence/.test(await p.getByTestId('no-evidence').innerText()));
+    await p.locator('[data-fn="busy"] [data-testid="score"]').click();
+    const bd = await p.getByTestId('breakdown').innerText();
+    check('queue: score breakdown lists every factor and the total', /Complexity/i.test(bd) && /Nesting/i.test(bd) && /Total: \d+ \/ 100/.test(bd) && /not used/.test(bd), bd.slice(0, 400));
+    await p.locator('[data-fn="busy"] [data-testid="score"]').click();
+    await p.locator('[data-fn="formatTotal"] [data-testid="score"]').click();
+    const bd2 = await p.getByTestId('breakdown').innerText();
+    check('diff: changed function gets the diff factor', /changed in the diff/.test(bd2) && /· changed/.test(await p.locator('[data-fn="formatTotal"]').innerText()), bd2.slice(0, 400));
+    check('diff: a hunk that does not match the loaded code is reported, not guessed', /Hunk doesn't match the loaded code/.test(await p.getByTestId('diff-problems').innerText()));
+    await p.getByTestId('changed-only').check();
+    const changed = [];
+    for (const li of await p.getByTestId('queue-item').all()) changed.push(await li.getAttribute('data-fn'));
+    check('queue: "Changed functions only" filters to the diff', changed.length === 1 && changed[0] === 'formatTotal', changed.join(', '));
+    await p.getByTestId('changed-only').uncheck();
+
+    // Shape
+    await nav.getByRole('button', { name: 'Code' }).click();
+    await p.getByTestId('pass-shape').click();
+    await p.locator('[data-testid="shape-fn"]', { hasText: 'formatTotal()' }).click();
+    const callees = await p.getByTestId('callees').innerText();
+    check('shape: outline + callees, unknown call marked unresolved', /helper\(\)[\s\S]*unresolved/.test(callees) && (await p.getByTestId('shape-fn').count()) >= 6, callees);
+    await p.locator('[data-testid="shape-fn"]', { hasText: 'add()' }).click();
+    check('shape: callers include the test that calls it', /adds|module-level|shop\.test\.js/.test(await p.getByTestId('callers').innerText()), await p.getByTestId('callers').innerText());
+
+    // Flow, before any tests
+    await p.getByTestId('pass-flow').click();
+    check('flow without tests: banner says only unreachable code is marked', /only marks unreachable code/.test(await p.getByTestId('flow-no-coverage').innerText()));
+    check('flow: code after return is labelled unreachable', (await p.locator('[data-line="14"]').getAttribute('data-flow')) === 'unreachable' && /unreachable/.test(await p.locator('[data-line="14"] [data-testid="unreachable-tag"]').innerText()));
+    await p.locator('[data-line="14"]').click();
+    check('flow: tapping it gives the reason from the syntax tree', /comes after return[\s\S]*can never run/.test(await p.locator('.right-pane').getByTestId('line-unreachable').innerText()));
+
+    // Intent before tests: no scaffolding guesses
+    await p.getByTestId('pass-intent').click();
+    check('intent: without tests nothing is flagged as scaffolding', /Run the tests first/.test(await p.getByTestId('scaffolding').innerText()));
+
+    // Run tests, then Flow and Intent again
+    await nav.getByRole('button', { name: 'Tests' }).click();
+    await p.getByRole('button', { name: /^Run tests/ }).click();
+    await p.getByTestId('test-summary').waitFor({ timeout: 120000 });
+    await nav.getByRole('button', { name: 'Code' }).click();
+    await p.getByTestId('pass-flow').click();
+    await p.locator('[data-line="2"]').waitFor();
+    check('flow with tests: a line the tests ran is marked run', (await p.locator('[data-line="2"]').getAttribute('class')).includes('flow-run'));
+    check('flow with tests: an untested line is dimmed and labelled', (await p.locator('[data-line="20"]').getAttribute('class')).includes('cov-miss') && /not run by the provided tests/.test(await p.locator('[data-line="20"]').innerText()) && /not run by the provided tests/.test(await p.locator('[data-line="17"]').innerText()));
+    await p.getByTestId('pass-intent').click();
+    await p.getByTestId('spec-item').first().click();
+    const sug = await p.getByTestId('suggestions').innerText();
+    check('intent: word-match suggestion offered, marked heuristic', /formatTotal/.test(sug), sug);
+    await p.getByTestId('suggestions').locator('li', { hasText: 'formatTotal' }).getByRole('button', { name: 'Confirm' }).click();
+    check('intent: confirming a suggestion links it', /formatTotal[\s\S]*confirmed suggestion/.test(await p.getByTestId('linked').innerText()));
+    await p.getByTestId('spec-item').nth(1).click();
+    await p.getByTestId('pick-functions').getByRole('button', { name: 'add()', exact: true }).click();
+    check('intent: linking by hand works', /add[\s\S]*manual/.test(await p.getByTestId('linked').innerText()));
+    const sc = await p.getByTestId('scaffolding').innerText();
+    check('intent: untested, unlinked function flagged as possible scaffolding; linked one is not', /unusedThing/.test(sc) && !/formatTotal/.test(sc), sc);
+    await p.close();
+  }
+  // phone: Queue and Shape fit
+  {
+    const { p, nav } = await loadShop(360);
+    await nav.getByRole('button', { name: 'Queue' }).click();
+    await p.getByTestId('queue-item').first().waitFor({ timeout: 30000 });
+    await p.locator('[data-fn="busy"] [data-testid="score"]').click();
+    const o1 = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    await p.screenshot({ path: path.join(ROOT, '..', 'tests', 'e2e', 'phone-queue.png'), fullPage: true });
+    await nav.getByRole('button', { name: 'Code' }).click();
+    await p.getByTestId('pass-shape').click();
+    await p.locator('[data-testid="shape-fn"]', { hasText: 'formatTotal()' }).click();
+    const o2 = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    await p.getByTestId('pass-flow').click();
+    const o3 = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check('phone: Queue, Shape and Flow have no horizontal scroll', o1 <= 0 && o2 <= 0 && o3 <= 0, `${o1}/${o2}/${o3}px`);
+    await p.getByTestId('pass-shape').click();
+    await p.screenshot({ path: path.join(ROOT, '..', 'tests', 'e2e', 'phone-shape.png'), fullPage: true });
     await p.close();
   }
 

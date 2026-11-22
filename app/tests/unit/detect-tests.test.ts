@@ -42,5 +42,8 @@ describe('lineCoverage', () => {
   it('labels only the first line of each stretch of not-run statements', () => {
     expect([...missStarts(cov)]).toEqual([3, 6]);
     expect([...missStarts({ statements: [1, 2, 3], lines: {} })]).toEqual([1]);
+    // a function header starts a new stretch; skipped (unreachable) lines end one
+    expect([...missStarts({ statements: [1, 2, 5, 6], lines: {} }, [4])]).toEqual([1, 5]);
+    expect([...missStarts({ statements: [1, 2, 3], lines: {} }, [], (n) => n === 2)]).toEqual([1, 3]);
   });
 });

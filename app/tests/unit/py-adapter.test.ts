@@ -55,7 +55,8 @@ const CASES: [string, string, number, string][] = [
   ['shadowed print is unknown', 'def f(print):\n    print(1)', 2, 'unknown/certain'],
   ['if', 'if a > 1:\n    pass', 1, 'control/certain'],
   ['return', 'def f(a):\n    return a + 1', 2, 'control/certain'],
-  ['raise of unknown class', 'def f():\n    raise ValueError("x")', 2, 'unknown/certain'],
+  ['raise of built-in exception', 'def f():\n    raise ValueError("x")', 2, 'control/certain'],
+  ['raise of unknown class', 'def f():\n    raise MyErr("x")', 2, 'unknown/certain'],
   ['await', 'async def f(c):\n    await c', 2, 'control/certain'],
   ['local pure call', 'def add(a, b):\n    return a + b\ns = add(1, 2)', 3, 'pure/certain'],
   ['local I/O call propagates', 'def save(x):\n    print(x)\nsave(1)', 3, 'io/certain'],
@@ -85,5 +86,68 @@ describe('Python nesting + summaries', () => {
   it('syntax error reported with line', () => {
     const a = run('def (:\n')[0];
     expect(a.ok).toBe(false); expect(a.error!.line).toBe(1);
+  });
+});
+
+describe('Python complexity, call sites and unreachable code (in Pyodide)', () => {
+  it('cyclomatic complexity counts decision points, not nested functions', () => {
+    const [fa] = run(`def f(a, b):
+    if a and b:
+        return 1
+    elif a:
+        pass
+    for x in a:
+        while x:
+            break
+    try:
+        pass
+    except ValueError:
+        pass
+    ys = [y for y in a if y]
+    def g():
+        if b:
+            pass
+    return 1 if a else 2
+`);
+    // if +1, and +1, elif +1, for +1, while +1, except +1, comprehension for +1 and if +1, ternary +1 = 10
+    expect(fa.functions.find((f) => f.name === 'f')!.complexity).toBe(10);
+    expect(fa.functions.find((f) => f.name === 'g')!.complexity).toBe(2);
+  });
+
+  it('call sites: local (with target), known and unresolved; module-level calls too', () => {
+    const [fa] = run(`def helper():
+    return 1
+
+def main():
+    helper()
+    print("x")
+    mystery()
+
+main()
+`);
+    const main = fa.functions.find((f) => f.name === 'main')!;
+    const helper = fa.functions.find((f) => f.name === 'helper')!;
+    expect(main.callSites!.map((c) => [c.name, c.kind])).toEqual([['helper', 'local'], ['print', 'known'], ['mystery', 'unresolved']]);
+    expect(main.callSites![0].target).toBe(helper.id);
+    expect(fa.moduleCalls!.map((c) => [c.name, c.target])).toEqual([['main', main.id]]);
+  });
+
+  it('unreachable: after return/raise/continue, and under if False', () => {
+    const [fa] = run(`def f(x):
+    return x
+    x += 1
+
+def g(xs):
+    for x in xs:
+        continue
+        print(x)
+    if False:
+        print("never")
+    raise ValueError()
+    print("after")
+`);
+    const lines = fa.unreachable!.map((u) => u.line);
+    expect(lines).toEqual(expect.arrayContaining([3, 8, 10, 12]));
+    expect(fa.unreachable!.find((u) => u.line === 10)!.reason).toMatch(/if False/);
   });
 });

@@ -4,10 +4,15 @@
   import { ROLE_LETTER, ROLE_LABEL, type FileAnalysis } from '../analysis/model';
   import { lineCoverage, missStarts, MISS_LABEL } from '../sandbox/coverage';
 
-  let { text, fa, path }: { text: string; fa: FileAnalysis | null; path: string } = $props();
+  let { text, fa, path, mode = 'lines' }: { text: string; fa: FileAnalysis | null; path: string; mode?: 'lines' | 'flow' } = $props();
 
-  const cov = $derived(app.showCoverage ? app.testRun?.coverage[path] ?? null : null);
-  const starts = $derived(missStarts(cov));
+  const flow = $derived(mode === 'flow');
+  // Flow always uses coverage when a test run exists; Lines uses it only when the toggle is on.
+  const cov = $derived(flow || app.showCoverage ? app.testRun?.coverage[path] ?? null : null);
+  const unreach = $derived(flow ? fa?.unreachable ?? [] : []);
+  const unreachAt = (n: number) => unreach.find((u) => u.line <= n && n <= u.endLine) ?? null;
+  // One "not run" label per stretch, restarting at each function so the label sits in every untested function.
+  const starts = $derived(missStarts(cov, (fa?.functions ?? []).map((f) => f.span.line), (n) => !!unreachAt(n)));
 
   const lines = $derived(buildLines(text, fa, app.settings.nestingLimit));
   const hidden = $derived(hiddenLines(fa, app.collapsed));
@@ -35,9 +40,11 @@
   {#each lines as l (l.n)}
     {#if !hidden.has(l.n)}
       {@const lc = lineCoverage(cov, l.n)}
-      <div class="row {l.role ? 'role-' + l.role : ''} {l.certainty ?? ''}" class:selected={app.selectedLine === l.n} class:cov-miss={lc?.state === 'miss'}
+      {@const ur = unreachAt(l.n)}
+      <div class="row {l.role ? 'role-' + l.role : ''} {l.certainty ?? ''}" class:selected={app.selectedLine === l.n} class:cov-miss={lc?.state === 'miss' || !!ur}
+        class:flow-run={flow && !!lc && lc.state !== 'miss' && !ur} class:unreach={!!ur} data-flow={flow ? (ur ? 'unreachable' : lc?.state ?? '') : undefined}
         role="button" tabindex="0" aria-pressed={app.selectedLine === l.n} data-line={l.n}
-        aria-label={`Line ${l.n}${l.role ? ', ' + ROLE_LABEL[l.role] + ', ' + l.certainty : ''}${l.flagged ? ', nested too deep' : ''}${lc?.state === 'miss' ? ', ' + MISS_LABEL : ''}`}
+        aria-label={`Line ${l.n}${l.role ? ', ' + ROLE_LABEL[l.role] + ', ' + l.certainty : ''}${l.flagged ? ', nested too deep' : ''}${ur ? ', unreachable: ' + ur.reason : lc?.state === 'miss' ? ', ' + MISS_LABEL : ''}`}
         onclick={() => select(l.n)} onkeydown={(e) => onKey(e, l.n)}>
         <span class="ln" aria-hidden="true">{l.n}</span>
         <span class="letter" aria-hidden="true">{l.role && l.starts ? ROLE_LETTER[l.role] : ''}</span>
@@ -49,7 +56,7 @@
           {/if}
         </span>
         <span class="flag" aria-hidden="true" title={l.flagged ? `Nested ${l.flagged.level} levels deep (limit ${app.settings.nestingLimit})` : ''}>{l.flagged ? '⚑' : ''}</span>
-        <code class="src">{#each l.guides.filter((g) => clear(l.text, g.blockId)) as g (g.blockId)}<span class="g c{g.color}" class:warn={g.warn} style:left={`${colOf(g.blockId)}ch`} aria-hidden="true"></span>{/each}{l.text || ' '}{#if starts.has(l.n)}<span class="nr-tag">{MISS_LABEL}</span>{/if}</code>
+        <code class="src">{#each l.guides.filter((g) => clear(l.text, g.blockId)) as g (g.blockId)}<span class="g c{g.color}" class:warn={g.warn} style:left={`${colOf(g.blockId)}ch`} aria-hidden="true"></span>{/each}{l.text || ' '}{#if ur && ur.line === l.n}<span class="nr-tag ur-tag" data-testid="unreachable-tag" title={ur.reason}>unreachable</span>{:else if starts.has(l.n) && !ur}<span class="nr-tag">{MISS_LABEL}</span>{/if}</code>
       </div>
       {#each l.blocks.filter((b) => app.collapsed[b.id]) as b (b.id)}
         <div class="summary-row">
@@ -109,6 +116,11 @@
   .row.cov-miss { background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--cov-miss) 6px 7px); }
   .nr-tag { display: inline-block; margin-left: 1.5ch; padding: 0 8px; border: 1px dashed var(--muted); border-radius: 6px; color: var(--text); opacity: 1; font: 13px/1.6 system-ui, sans-serif; white-space: nowrap; vertical-align: 1px; }
   .row.cov-miss .src:has(.nr-tag) { opacity: 1; color: color-mix(in srgb, var(--text) 50%, transparent); }
+  /* Flow pass: lines the tests ran get a solid green edge; unreachable code is dimmed with a cross-hatch. */
+  .row.flow-run { border-left-color: var(--ok); background: color-mix(in srgb, var(--ok) 9%, transparent); }
+  .row.unreach { background-image: repeating-linear-gradient(45deg, transparent 0 6px, var(--cov-miss) 6px 7px), repeating-linear-gradient(135deg, transparent 0 6px, var(--cov-miss) 6px 7px); }
+  .ur-tag { border-style: solid; border-color: var(--bad); }
+  .row.unreach .src:has(.ur-tag) { opacity: 1; color: color-mix(in srgb, var(--text) 50%, transparent); }
   .summary-row { padding: 2px 0 2px calc(3.2em + 1.6em + 1.6em + 1.2em); }
   .summary { border: 1px dashed var(--border); background: var(--callout-beige); color: var(--text); border-radius: 8px; padding: 4px 10px; min-height: 36px; text-align: left; font: 15px/1.4 system-ui, sans-serif; }
 </style>

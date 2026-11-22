@@ -14,6 +14,7 @@
   const lc = $derived(line && app.codeFile ? lineCoverage(app.testRun?.coverage[app.codeFile], line) : null);
   const testName = (id: string) => app.testRun?.results[id]?.name ?? app.testRun?.tests.find((t) => t.id === id)?.name ?? id;
   const outcomeOf = (id: string) => app.testRun?.results[id]?.outcome ?? '';
+  const ur = $derived(fa && line ? (fa.unreachable ?? []).find((u) => u.line <= line && line <= u.endLine) ?? null : null);
   const level = $derived(enclosing.length ? Math.max(...enclosing.map((b) => b.level)) : 0);
 </script>
 
@@ -21,6 +22,12 @@
   {#if onclose}<button class="btn close" onclick={onclose} aria-label="Close panel">✕</button>{/if}
   {#if line && (fa || lc)}
     <h2>Line {line}</h2>
+    {#if ur}
+      <div class="stmt" data-testid="line-unreachable">
+        <h3>Unreachable</h3>
+        <p class="small">{ur.line === ur.endLine ? `Line ${ur.line}` : `Lines ${ur.line}–${ur.endLine}`} {ur.reason}. <span class="tag certain">certain</span> <span class="meta">from the syntax tree</span></p>
+      </div>
+    {/if}
     {#if lc}
       <div class="stmt cov" data-testid="line-tests">
         <h3>Tests</h3>

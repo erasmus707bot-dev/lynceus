@@ -108,6 +108,18 @@ function resolveRelative(from: string, spec: string, paths: Set<string>): string
   return null;
 }
 
+function isFalsyLiteral(n: Node): boolean {
+  return (n.type === 'BooleanLiteral' && !n.value) || (n.type === 'NumericLiteral' && n.value === 0) || n.type === 'NullLiteral' ||
+    (n.type === 'StringLiteral' && n.value === '') || (n.type === 'Identifier' && n.name === 'undefined');
+}
+function literalText(n: Node): string {
+  if (n.type === 'BooleanLiteral') return String(n.value);
+  if (n.type === 'NumericLiteral') return String(n.value);
+  if (n.type === 'NullLiteral') return 'null';
+  if (n.type === 'StringLiteral') return "''";
+  return 'undefined';
+}
+
 const CONTROL_LABEL: Record<string, string> = {
   IfStatement: 'if', ForStatement: 'for loop', ForInStatement: 'for…in loop', ForOfStatement: 'for…of loop',
   WhileStatement: 'while loop', DoWhileStatement: 'do…while loop', SwitchStatement: 'switch', TryStatement: 'try',
@@ -128,7 +140,7 @@ export class JsAnalyzer {
     this.paths = new Set(files.map((f) => f.path));
     const parsed: { ctx: FileCtx; ast: T.File | null }[] = [];
     files.forEach((file, idx) => {
-      const out: FileAnalysis = { path: file.path, lang: 'javascript', ok: true, statements: [], blocks: [], functions: [] };
+      const out: FileAnalysis = { path: file.path, lang: 'javascript', ok: true, statements: [], blocks: [], functions: [], unreachable: [], moduleCalls: [] };
       const ctx: FileCtx = { file, idx, out, counter: 0, imports: new Map(), topFns: new Map(), classMethods: new Map() };
       this.ctxs.push(ctx);
       try {
@@ -189,7 +201,43 @@ export class JsAnalyzer {
   private nextId(ctx: FileCtx, kind: string) { return `${ctx.idx}:${kind}:${ctx.counter++}`; }
 
   private body(ctx: FileCtx, stmts: Node[], scope: Scope, fn: string | null, level: number, cls: string | null) {
-    for (const s of stmts) this.statement(ctx, s, scope, fn, level, cls);
+    let deadAfter: string | null = null;
+    for (const s of stmts) {
+      // function declarations are hoisted, so they are not dead even after a return
+      if (deadAfter && s.type !== 'FunctionDeclaration' && s.type !== 'EmptyStatement') this.markUnreachable(ctx, s, `comes after ${deadAfter} in the same block, so it can never run`);
+      this.statement(ctx, s, scope, fn, level, cls);
+      if (!deadAfter && (s.type === 'ReturnStatement' || s.type === 'ThrowStatement' || s.type === 'BreakStatement' || s.type === 'ContinueStatement'))
+        deadAfter = `${s.type.replace('Statement', '').toLowerCase()} (line ${s.loc!.start.line})`;
+    }
+    // `if (false)` / `while (false)` bodies are proven never to run
+    for (const s of stmts) {
+      if ((s.type === 'IfStatement' || s.type === 'WhileStatement') && isFalsyLiteral(s.test)) {
+        const body = s.type === 'IfStatement' ? s.consequent : s.body;
+        this.markUnreachable(ctx, body, `sits under \`${s.type === 'IfStatement' ? 'if' : 'while'} (${literalText(s.test)})\` (line ${s.loc!.start.line}), which is never true`);
+      }
+    }
+  }
+
+  private markUnreachable(ctx: FileCtx, n: Node, reason: string) {
+    ctx.out.unreachable!.push({ line: n.loc!.start.line, endLine: n.loc!.end.line, reason });
+  }
+
+  /** McCabe cyclomatic complexity: 1 + decision points, not counting nested functions. */
+  private complexity(n: T.Function): number {
+    let c = 1;
+    const visit = (x: Node, top: boolean) => {
+      if (!top && isFn(x)) return;
+      switch (x.type) {
+        case 'IfStatement': case 'ConditionalExpression': case 'ForStatement': case 'ForInStatement': case 'ForOfStatement':
+        case 'WhileStatement': case 'DoWhileStatement': case 'CatchClause': c++; break;
+        case 'SwitchCase': if (x.test) c++; break;
+        case 'LogicalExpression': c++; break;
+        case 'AssignmentExpression': if (x.operator === '&&=' || x.operator === '||=' || x.operator === '??=') c++; break;
+      }
+      for (const ch of children(x)) visit(ch, false);
+    };
+    visit(n.body as Node, true);
+    return c;
   }
 
   private headerEnd(n: Node, body: Node | null | undefined): number {
@@ -330,7 +378,7 @@ export class JsAnalyzer {
     const qual = cls ? `${cls}.${name}` : name;
     const id = (!parentFn && (ctx.topFns.get(name) && !cls)) ? ctx.topFns.get(name)! : cls && ctx.classMethods.get(cls)?.get(name) ? ctx.classMethods.get(cls)!.get(name)! : this.nextId(ctx, 'fn');
     const params = n.params.map((p) => (p.type === 'Identifier' ? p.name : p.type === 'AssignmentPattern' && p.left.type === 'Identifier' ? p.left.name : '…'));
-    const info: FunctionInfo = { id, name, qualname: qual, span: span(stmtNode.type === 'VariableDeclaration' ? stmtNode : n), params, calls: [], maxLevel: 0, role: 'pure' };
+    const info: FunctionInfo = { id, name, qualname: qual, span: span(stmtNode.type === 'VariableDeclaration' ? stmtNode : n), params, calls: [], maxLevel: 0, role: 'pure', complexity: this.complexity(n), callSites: [] };
     this.fns.set(id, info);
     ctx.out.functions.push(info);
     if (stmtNode === n || stmtNode.type !== 'VariableDeclaration') {
@@ -418,6 +466,16 @@ export class JsAnalyzer {
   }
 
   private call(ctx: FileCtx, n: T.CallExpression | T.NewExpression | T.OptionalCallExpression, scope: Scope, fn: string | null, cls: string | null): Evidence {
+    const ev = this.callEvidence(ctx, n, scope, fn, cls);
+    const target = (ev as Evidence & { _target?: string })._target ?? null;
+    const kind = ev.rule === 'call.local' ? 'local' : ev.rule === 'call.unknown' || ev.rule === 'call.dynamic-import' ? 'unresolved' : 'known';
+    const site = { name: dotted(n.callee as Node) ?? '(expression)', line: n.loc!.start.line, target, kind, rule: ev.rule } as const;
+    if (fn && this.fns.get(fn)) this.fns.get(fn)!.callSites!.push({ ...site });
+    else ctx.out.moduleCalls!.push({ ...site });
+    return ev;
+  }
+
+  private callEvidence(ctx: FileCtx, n: T.CallExpression | T.NewExpression | T.OptionalCallExpression, scope: Scope, fn: string | null, cls: string | null): Evidence {
     const callee = n.callee as Node;
     const name = dotted(callee);
     const shown = (name ?? '(expression)') + '()';

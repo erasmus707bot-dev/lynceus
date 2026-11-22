@@ -35,3 +35,13 @@ Needs Node 20.19+ or 22.12+ (Vite 8).
 - User code runs only in `src/workers/sandbox.worker.ts`: a fresh worker per run, started from a blob: URL, network stubbed before any user code (`src/sandbox/guard.ts`, `py_guard.py`).
 - Time limits (Tests tab, "Time limits"): 10 s per test and 60 s per run by default. A hung test is reported by name and the rest run again in a new worker.
 - JS runner: ES modules and `require` between uploaded files, `describe/it/test`, hooks, and the matchers listed in `src/sandbox/expect.ts` (pinned by `tests/fixtures/expect-snapshots.json`). Node built-ins, npm packages, `jest.fn` and snapshots fail that one test with a reason.
+
+## Phase 4 notes (queue and reading passes)
+
+- **Queue tab:** functions ranked by a 0–100 risk score. Tap a score for every factor, its value, weight and points. Weights can be changed under **Risk weights** and are saved in settings.
+  - Scales: complexity `(cc−1)/10`, nesting `depth/5`, side-effect lines `count/8`, uncovered = share of statements not run, diff = 1 if any line changed. Each is capped at 1.
+  - With no test run or no diff, that factor's weight is shared out over the rest and the queue says so.
+  - Functions in test files are left out.
+- **Diff:** paste a unified diff on the Input tab. Hunks must match the loaded code exactly; any that don't are listed under **Diff problems** and not used.
+- **Code tab passes:** Lines (roles), Shape (outline and call graph), Flow (what the tests ran, plus unreachable code), Intent (spec bullets linked to functions and tests).
+- Spec links are kept on the workspace, so they are saved only when **Remember** is on.

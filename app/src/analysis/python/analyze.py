@@ -90,7 +90,8 @@ class FileCtx:
         self.imports = {}       # local name -> dotted target ("numpy", "calc.add", ...)
         self.top_fns = {}       # name -> fn id
         self.classes = {}       # class name -> {method: fn id}
-        self.out = {"path": path, "lang": "python", "ok": True, "statements": [], "blocks": [], "functions": []}
+        self.out = {"path": path, "lang": "python", "ok": True, "statements": [], "blocks": [], "functions": [],
+                    "unreachable": [], "moduleCalls": []}
 
     def next_id(self, kind):
         i = f"{self.idx}:{kind}:{self.counter}"
@@ -226,8 +227,47 @@ class PyAnalyzer:
         return b
 
     def body(self, ctx, stmts, scope, fn, level):
+        dead_after = None
         for s in stmts:
+            if dead_after is not None:
+                self.mark_unreachable(ctx, s, f"comes after {dead_after} in the same block, so it can never run")
             self.statement(ctx, s, scope, fn, level)
+            if dead_after is None and isinstance(s, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+                dead_after = {"Return": "return", "Raise": "raise", "Break": "break", "Continue": "continue"}[type(s).__name__] + f" (line {s.lineno})"
+        # `if False:` / `while False:` bodies are proven never to run
+        for s in stmts:
+            if isinstance(s, (ast.If, ast.While)) and isinstance(s.test, ast.Constant) and s.test.value in (False, 0, None, "") and s.body:
+                for b in s.body:
+                    self.mark_unreachable(ctx, b, f"sits under `{type(s).__name__.lower()} {ast.unparse(s.test)}:` (line {s.lineno}), which is never true")
+
+    @staticmethod
+    def mark_unreachable(ctx, n, reason):
+        start = n.decorator_list[0].lineno if getattr(n, "decorator_list", None) else n.lineno
+        ctx.out["unreachable"].append({"line": start, "endLine": n.end_lineno or n.lineno, "reason": reason})
+
+    @staticmethod
+    def complexity(fn_node):
+        """McCabe cyclomatic complexity: 1 + decision points, not counting nested functions or classes."""
+        c = 1
+
+        def visit(x):
+            nonlocal c
+            if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+                return
+            if isinstance(x, (ast.If, ast.IfExp, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler)):
+                c += 1
+            elif isinstance(x, ast.BoolOp):
+                c += len(x.values) - 1
+            elif isinstance(x, ast.comprehension):
+                c += 1 + len(x.ifs)
+            elif hasattr(ast, "match_case") and isinstance(x, ast.match_case):
+                c += 1
+            for ch in ast.iter_child_nodes(x):
+                visit(ch)
+
+        for st in fn_node.body:
+            visit(st)
+        return c
 
     @staticmethod
     def header_end(n):
@@ -377,7 +417,8 @@ class PyAnalyzer:
             fid = ctx.next_id("fn")
             scope.fn_defs[n.name] = fid
         params, locs, globs, nonlocs = collect_locals(n)
-        info = {"id": fid, "name": n.name, "qualname": qual, "span": span(n), "params": params, "calls": [], "maxLevel": 0, "role": "pure"}
+        info = {"id": fid, "name": n.name, "qualname": qual, "span": span(n), "params": params, "calls": [], "maxLevel": 0, "role": "pure",
+                "complexity": self.complexity(n), "callSites": []}
         self.fns[fid] = info
         ctx.out["functions"].append(info)
         e = [ev("pure", "define.function", f"defines function {qual}({', '.join(params)})")]
@@ -503,6 +544,17 @@ class PyAnalyzer:
         return None
 
     def call(self, ctx, n, scope, fn):
+        e = self._call_evidence(ctx, n, scope, fn)
+        rule = e["rule"]
+        kind = "local" if rule == "call.local" else "unresolved" if rule == "call.unknown" else "known"
+        site = {"name": dotted(n.func) or "(expression)", "line": n.lineno, "target": e.get("_target"), "kind": kind, "rule": rule}
+        if fn and fn in self.fns:
+            self.fns[fn]["callSites"].append(site)
+        else:
+            ctx.out["moduleCalls"].append(site)
+        return e
+
+    def _call_evidence(self, ctx, n, scope, fn):
         name = dotted(n.func)
         shown = (name or "(expression)") + "()"
         if fn and fn in self.fns:

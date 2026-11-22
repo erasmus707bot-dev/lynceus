@@ -41,7 +41,8 @@ describe('JS roles: control', () => {
   it('if with pure test is control', () => expect(role('if (a > 1) {\n}')).toBe('control/certain'));
   it('for loop', () => expect(role('for (let i = 0; i < 3; i++) {\n}')).toBe('control/certain'));
   it('return', () => expect(role('function f(a) {\n  return a + 1;\n}', 2)).toBe('control/certain'));
-  it('throw', () => expect(role('function f() {\n  throw new Error("x");\n}', 2)).toBe('unknown/certain'));
+  it('throw of a built-in error is control (constructor is pure)', () => expect(role('function f() {\n  throw new Error("x");\n}', 2)).toBe('control/certain'));
+  it('throw of an unknown class stays unknown', () => expect(role('function f() {\n  throw new MyErr("x");\n}', 2)).toBe('unknown/certain'));
   it('break', () => expect(role('while (true) {\n  break;\n}', 2)).toBe('control/certain'));
   it('await', () => expect(role('async function f(p) {\n  await p;\n}', 2)).toBe('control/certain'));
 });

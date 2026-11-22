@@ -40,7 +40,31 @@ export const app = $state({
   testProgress: null as Progress | null,
   testRun: null as RunOutcome | null,
   showCoverage: true,
+  // Phase 4: reading passes and queue (memory only; spec links live on the workspace)
+  codePass: 'lines' as 'lines' | 'shape' | 'flow' | 'intent',
+  selectedFn: null as string | null,
+  openBreakdown: null as string | null,
+  queueChangedOnly: false,
+  specItem: null as string | null,
 });
+
+/** Opens a function in the Code tab at its first line. */
+export function openFunction(path: string, line: number, fnId?: string): void {
+  app.codeFile = path; app.selectedLine = line; app.showHelp = false;
+  if (fnId) app.selectedFn = fnId;
+  if (app.codePass === 'shape' || app.codePass === 'intent') app.codePass = 'lines';
+  app.tab = 'code';
+  setTimeout(() => document.querySelector(`[data-line="${line}"]`)?.scrollIntoView({ block: 'center' }), 50);
+}
+
+export function toggleSpecLink(item: string, kind: 'function' | 'test', ref: string, how: 'manual' | 'confirmed suggestion' = 'manual'): void {
+  const ws = app.workspace;
+  if (!ws) return;
+  const links = ws.specLinks ?? [];
+  const i = links.findIndex((l) => l.item === item && l.kind === kind && l.ref === ref);
+  ws.specLinks = i >= 0 ? links.filter((_, j) => j !== i) : [...links, { item, kind, ref, how }];
+  void persist();
+}
 
 /** Starts a test run. Python needs the one-time Python download (same consent as analysis). */
 export async function runTests(opts: { allowPython?: boolean } = {}): Promise<void> {
@@ -116,6 +140,7 @@ export async function doAnalyze(allowPython: boolean): Promise<void> {
 function resetAnalysis(): void {
   stopWorker();
   resetTests();
+  app.codePass = 'lines'; app.selectedFn = null; app.openBreakdown = null; app.queueChangedOnly = false; app.specItem = null;
   app.analysis = null; app.analysisStatus = 'idle'; app.analysisMsg = ''; app.pythonSkipped = false;
   app.codeFile = null; app.selectedLine = null; app.collapsed = {};
 }

@@ -30,6 +30,15 @@
     <li><span class="flag">⚑</span> and a <span class="warnline">thick orange guide</span> mark blocks nested deeper than {app.settings.nestingLimit} levels.</li>
     <li>Tap <strong>▾</strong> to collapse a block. Its summary (loop/branches/writes/calls) comes straight from the syntax tree, never from an AI.</li>
   </ul>
+  <h3>Reading passes</h3>
+  <ul>
+    <li><strong>Lines</strong>: every line with its role letter (this view).</li>
+    <li><strong>Shape</strong>: an outline of files, classes and functions. Pick one to see who calls it and what it calls. Calls are marked <em>in your code</em>, <em>known</em> (on a rule list) or <em>unresolved</em>.</li>
+    <li><strong>Flow</strong>: lines the tests ran get a green edge; the rest are dimmed and labelled "not run by the provided tests". Code that can never run (after a return, or under <code>if False</code>) is labelled <strong>unreachable</strong>. Without a test run, Flow only marks unreachable code.</li>
+    <li><strong>Intent</strong>: link each spec bullet to the functions and tests that cover it. Suggestions are word matches and count only once you confirm them. A function is flagged as possible <strong>scaffolding</strong> when tests ran, none of its lines ran, and no spec bullet links to it.</li>
+  </ul>
+  <h3>Risk score (Queue tab)</h3>
+  <p>0–100, from complexity, nesting, side-effect lines, untested lines and whether the diff touched it. <strong>High</strong> is 67 or more, <strong>medium</strong> 34–66, <strong>low</strong> below 34. Tap a score to see every factor and its points. Missing evidence (no tests, no diff) is said out loud, and its weight moves to the other factors.</p>
   <h3>Tapping a line</h3>
   <p>Shows the exact rule that fired, what it matched, and whether it is certain or heuristic. Press <kbd>Esc</kbd> or tap the line again to clear.</p>
 </section>

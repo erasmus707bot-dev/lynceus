@@ -19,4 +19,6 @@ export interface Workspace {
   diff: string;
   spec: string;
   loadedAt: number;
+  /** Spec bullet ↔ function/test links Scott made or confirmed (Phase 4, Intent pass). Saved only with the session. */
+  specLinks?: { item: string; kind: 'function' | 'test'; ref: string; how: 'manual' | 'confirmed suggestion' }[];
 }

@@ -5,6 +5,7 @@
   import Placeholder from './components/Placeholder.svelte';
   import CodeTab from './components/CodeTab.svelte';
   import TestsTab from './components/TestsTab.svelte';
+  import QueueTab from './components/QueueTab.svelte';
   import { app } from './lib/session.svelte';
 </script>
 
@@ -19,7 +20,7 @@
   {#if app.tab === 'input'}
     <InputScreen />
   {:else if app.tab === 'queue'}
-    <Placeholder title="Reading queue" phase={4} what="the “Read these first” list of the riskiest functions, with score breakdowns." />
+    <QueueTab />
   {:else if app.tab === 'code'}
     <CodeTab />
   {:else if app.tab === 'tests'}

@@ -4,11 +4,16 @@
   import CodeView from './CodeView.svelte';
   import EvidencePane from './EvidencePane.svelte';
   import PyodideConsent from './PyodideConsent.svelte';
+  import PassSwitch from './PassSwitch.svelte';
+  import ShapeView from './ShapeView.svelte';
+  import IntentView from './IntentView.svelte';
 
   const fa = $derived(app.analysis?.files.find((f) => f.path === app.codeFile) ?? null);
   const src = $derived(app.workspace?.files.find((f) => f.path === app.codeFile) ?? null);
   const files = $derived(app.workspace?.files ?? []);
-  const sheetOpen = $derived(app.selectedLine !== null || app.showHelp);
+  const linePass = $derived(app.codePass === 'lines' || app.codePass === 'flow');
+  const sheetOpen = $derived(linePass && (app.selectedLine !== null || app.showHelp));
+  const flowNoCov = $derived(app.codePass === 'flow' && !!src && !app.testRun?.coverage[src.path]);
 
   function toggleRole(r: Role) {
     app.roleFilter = app.roleFilter.includes(r) ? app.roleFilter.filter((x) => x !== r) : [...app.roleFilter, r];
@@ -35,6 +40,12 @@
 {:else if app.analysisStatus === 'error'}
   <p class="callout stop" role="alert">Analysis failed: {app.analysisMsg}</p>
 {:else}
+  <PassSwitch />
+  {#if app.codePass === 'shape'}
+    <ShapeView />
+  {:else if app.codePass === 'intent'}
+    <IntentView />
+  {:else}
   <div class="toolbar">
     <label class="file">File
       <select bind:value={app.codeFile} onchange={() => { app.selectedLine = null; }} data-testid="file-select">
@@ -52,7 +63,7 @@
       {/each}
     </div>
     <div class="right">
-      {#if app.testRun && Object.keys(app.testRun.coverage).length}
+      {#if app.codePass === 'lines' && app.testRun && Object.keys(app.testRun.coverage).length}
         <button class="btn" aria-pressed={app.showCoverage} onclick={() => (app.showCoverage = !app.showCoverage)} data-testid="coverage-toggle">{app.showCoverage ? 'Coverage: on' : 'Coverage: off'}</button>
       {/if}
       <button class="btn" aria-pressed={app.wrap} onclick={() => (app.wrap = !app.wrap)}>{app.wrap ? 'Wrap: on' : 'Wrap: off'}</button>
@@ -64,14 +75,20 @@
     <p class="callout stop" role="alert">Couldn't parse {fa.path}: {fa.error?.message} (line {fa.error?.line}). The code is shown without markers.</p>
   {/if}
   {#if src && !fa}<p class="callout warn">{src.path} was not analyzed.</p>{/if}
+  {#if flowNoCov}
+    <p class="callout beige" role="status" data-testid="flow-no-coverage">{app.testRun ? `The test run has no coverage for ${src?.path}` : 'No tests have run yet'}, so Flow only marks unreachable code here. Run tests on the Tests tab to see which lines the tests ran.</p>
+  {:else if app.codePass === 'flow'}
+    <p class="small muted flow-key">Flow: <span class="k run">green edge</span> = run by a test or at import · <span class="k miss">dimmed</span> = not run by the provided tests · <span class="k ur">unreachable</span> = can never run.</p>
+  {/if}
   <div class="split">
-    <div class="left">{#if src}<CodeView text={src.text} {fa} path={src.path} />{/if}</div>
+    <div class="left">{#if src}<CodeView text={src.text} {fa} path={src.path} mode={app.codePass === 'flow' ? 'flow' : 'lines'} />{/if}</div>
     <div class="right-pane"><div class="sticky"><EvidencePane {fa} /></div></div>
   </div>
   {#if sheetOpen}
     <div class="sheet" role="dialog" aria-label="Line details">
       <EvidencePane {fa} onclose={() => { app.selectedLine = null; app.showHelp = false; }} />
     </div>
+  {/if}
   {/if}
 {/if}
 
@@ -89,6 +106,11 @@
   .chip.r-control .l, .chip.r-control[aria-pressed='true'] { color: var(--r-control); } .chip.r-control[aria-pressed='true'] { background: var(--r-control-bg); }
   .chip.r-pure .l, .chip.r-pure[aria-pressed='true'] { color: var(--r-pure); } .chip.r-pure[aria-pressed='true'] { background: var(--r-pure-bg); }
   .chip.r-unknown .l, .chip.r-unknown[aria-pressed='true'] { color: var(--r-unknown); } .chip.r-unknown[aria-pressed='true'] { background: var(--r-unknown-bg); }
+  .flow-key { margin: 0 0 10px; }
+  .k { border-radius: 6px; padding: 0 6px; }
+  .k.run { border-left: 3px solid var(--ok); }
+  .k.miss { opacity: 0.6; border: 1px dashed var(--muted); }
+  .k.ur { border: 1px solid var(--bad); }
   .right { display: flex; gap: 8px; margin-left: auto; }
   .split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
   .right-pane { display: none; }

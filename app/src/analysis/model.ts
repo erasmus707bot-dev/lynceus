@@ -53,7 +53,18 @@ export interface FunctionInfo {
   calls: string[];     // callee names as written
   maxLevel: number;    // deepest control nesting level inside it
   role: Role;          // summary role of the whole function (local calls propagated)
+  complexity?: number; // McCabe cyclomatic complexity (1 + decision points), from the syntax tree
+  callSites?: CallSite[];
 }
+
+/**
+ * One call written in the code. kind: 'local' = resolved to a function in the uploaded code (target = its id);
+ * 'known' = matched a rule list (built-in or library); 'unresolved' = the tool can't tell what it calls.
+ */
+export interface CallSite { name: string; line: number; target: string | null; kind: 'local' | 'known' | 'unresolved'; rule: string }
+
+/** Code proven unreachable from the syntax tree (after return/raise/throw/break/continue, or under `if False`). */
+export interface Unreachable { line: number; endLine: number; reason: string }
 
 export interface FileAnalysis {
   path: string;
@@ -63,6 +74,8 @@ export interface FileAnalysis {
   statements: Statement[];
   blocks: Block[];
   functions: FunctionInfo[];
+  unreachable?: Unreachable[];
+  moduleCalls?: CallSite[]; // calls made at module level (not inside any function)
 }
 
 export interface Analysis { files: FileAnalysis[]; ms: number }
