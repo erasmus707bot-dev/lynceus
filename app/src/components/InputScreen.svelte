@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, persist, setRemember, runAnalysis } from '../lib/session.svelte';
+  import { app, persist, setRemember, runAnalysis, resetTests } from '../lib/session.svelte';
   import { filesFromDrop, hasFiles, type Named } from '../lib/drop';
   import { acceptBytes, makeFile, mergeFiles, pastedName, readZip } from '../lib/files';
   import { guessLang } from '../lib/detect';
@@ -88,9 +88,10 @@
     error = '';
     if (!draft.length) { error = 'Paste some code or add files first.'; return; }
     if (limits.level === 'stop') { error = limits.message; return; }
+    resetTests();
     app.workspace = { files: draft, skipped: app.pendingSkipped, diff: app.diffText, spec: app.specText, loadedAt: Date.now() };
     await persist();
-    app.notice = `Loaded ${limits.message} Open the Code tab to read it.`;
+    app.notice = `Loaded ${limits.message} Open the Code tab to read it, or Tests to run its tests.`;
     void runAnalysis();
   }
 

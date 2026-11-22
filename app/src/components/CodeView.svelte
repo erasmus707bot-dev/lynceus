@@ -2,8 +2,12 @@
   import { app } from '../lib/session.svelte';
   import { buildLines, hiddenLines } from '../analysis/lines';
   import { ROLE_LETTER, ROLE_LABEL, type FileAnalysis } from '../analysis/model';
+  import { lineCoverage, missStarts, MISS_LABEL } from '../sandbox/coverage';
 
-  let { text, fa }: { text: string; fa: FileAnalysis | null } = $props();
+  let { text, fa, path }: { text: string; fa: FileAnalysis | null; path: string } = $props();
+
+  const cov = $derived(app.showCoverage ? app.testRun?.coverage[path] ?? null : null);
+  const starts = $derived(missStarts(cov));
 
   const lines = $derived(buildLines(text, fa, app.settings.nestingLimit));
   const hidden = $derived(hiddenLines(fa, app.collapsed));
@@ -30,9 +34,10 @@
 <div class="code {filterClass}" class:wrap={app.wrap} role="group" aria-label="Source code with role markers">
   {#each lines as l (l.n)}
     {#if !hidden.has(l.n)}
-      <div class="row {l.role ? 'role-' + l.role : ''} {l.certainty ?? ''}" class:selected={app.selectedLine === l.n}
+      {@const lc = lineCoverage(cov, l.n)}
+      <div class="row {l.role ? 'role-' + l.role : ''} {l.certainty ?? ''}" class:selected={app.selectedLine === l.n} class:cov-miss={lc?.state === 'miss'}
         role="button" tabindex="0" aria-pressed={app.selectedLine === l.n} data-line={l.n}
-        aria-label={`Line ${l.n}${l.role ? ', ' + ROLE_LABEL[l.role] + ', ' + l.certainty : ''}${l.flagged ? ', nested too deep' : ''}`}
+        aria-label={`Line ${l.n}${l.role ? ', ' + ROLE_LABEL[l.role] + ', ' + l.certainty : ''}${l.flagged ? ', nested too deep' : ''}${lc?.state === 'miss' ? ', ' + MISS_LABEL : ''}`}
         onclick={() => select(l.n)} onkeydown={(e) => onKey(e, l.n)}>
         <span class="ln" aria-hidden="true">{l.n}</span>
         <span class="letter" aria-hidden="true">{l.role && l.starts ? ROLE_LETTER[l.role] : ''}</span>
@@ -44,7 +49,7 @@
           {/if}
         </span>
         <span class="flag" aria-hidden="true" title={l.flagged ? `Nested ${l.flagged.level} levels deep (limit ${app.settings.nestingLimit})` : ''}>{l.flagged ? '⚑' : ''}</span>
-        <code class="src">{#each l.guides.filter((g) => clear(l.text, g.blockId)) as g (g.blockId)}<span class="g c{g.color}" class:warn={g.warn} style:left={`${colOf(g.blockId)}ch`} aria-hidden="true"></span>{/each}{l.text || ' '}</code>
+        <code class="src">{#each l.guides.filter((g) => clear(l.text, g.blockId)) as g (g.blockId)}<span class="g c{g.color}" class:warn={g.warn} style:left={`${colOf(g.blockId)}ch`} aria-hidden="true"></span>{/each}{l.text || ' '}{#if starts.has(l.n)}<span class="nr-tag">{MISS_LABEL}</span>{/if}</code>
       </div>
       {#each l.blocks.filter((b) => app.collapsed[b.id]) as b (b.id)}
         <div class="summary-row">
@@ -99,6 +104,11 @@
     background: color-mix(in srgb, var(--tint) 50%, transparent); border-left-style: dashed;
   }
   .row.selected { background: var(--selected) !important; }
+  /* Coverage layer: lines no test ran are dimmed and labelled (text label too, never colour alone). */
+  .row.cov-miss .src, .row.cov-miss .letter { opacity: 0.5; }
+  .row.cov-miss { background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--cov-miss) 6px 7px); }
+  .nr-tag { display: inline-block; margin-left: 1.5ch; padding: 0 8px; border: 1px dashed var(--muted); border-radius: 6px; color: var(--text); opacity: 1; font: 13px/1.6 system-ui, sans-serif; white-space: nowrap; vertical-align: 1px; }
+  .row.cov-miss .src:has(.nr-tag) { opacity: 1; color: color-mix(in srgb, var(--text) 50%, transparent); }
   .summary-row { padding: 2px 0 2px calc(3.2em + 1.6em + 1.6em + 1.2em); }
   .summary { border: 1px dashed var(--border); background: var(--callout-beige); color: var(--text); border-radius: 8px; padding: 4px 10px; min-height: 36px; text-align: left; font: 15px/1.4 system-ui, sans-serif; }
 </style>

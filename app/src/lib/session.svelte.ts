@@ -4,6 +4,8 @@ import { loadSettings, saveSettings, applyTheme, type Settings } from './setting
 import { clearSession, loadSession, saveSession } from './retention';
 import type { Analysis, Role } from '../analysis/model';
 import { analyze, pyodideCached, stop as stopWorker } from '../analysis/client';
+import { runTests as runSandbox, stopTests, type Progress, type RunOutcome } from '../sandbox/client';
+import { detectTests } from '../sandbox/detect-tests';
 
 export type Tab = 'input' | 'queue' | 'code' | 'tests' | 'report';
 
@@ -33,7 +35,46 @@ export const app = $state({
   roleFilter: [] as Role[],  // calm by default: no role tinted until the reviewer asks
   collapsed: {} as Record<string, boolean>,
   wrap: typeof window !== 'undefined' ? window.innerWidth < 760 : true,
+  // test runs (Phase 3; memory only, never persisted)
+  testStatus: 'idle' as 'idle' | 'needs-consent' | 'running' | 'done',
+  testProgress: null as Progress | null,
+  testRun: null as RunOutcome | null,
+  showCoverage: true,
 });
+
+/** Starts a test run. Python needs the one-time Python download (same consent as analysis). */
+export async function runTests(opts: { allowPython?: boolean } = {}): Promise<void> {
+  const ws = app.workspace;
+  if (!ws || app.testStatus === 'running') return;
+  const found = detectTests(ws.files);
+  const hasPy = found.some((d) => d.lang === 'python');
+  let allowPython = !!opts.allowPython || app.pyConsent;
+  if (hasPy && !allowPython && (await pyodideCached())) allowPython = true;
+  if (hasPy && !allowPython && opts.allowPython === undefined) { app.testStatus = 'needs-consent'; return; }
+  if (allowPython) app.pyConsent = true;
+  app.testStatus = 'running';
+  app.testRun = null;
+  app.testProgress = { lang: null, status: 'Starting…', current: null, total: 0, finished: 0 };
+  const langs: ('python' | 'javascript')[] = allowPython ? ['python', 'javascript'] : ['javascript'];
+  try {
+    const r = await runSandbox($state.snapshot(ws.files) as typeof ws.files, {
+      testMs: app.settings.testTimeoutSec * 1000, runMs: app.settings.runTimeoutSec * 1000,
+    }, (p) => { if (app.workspace === ws) app.testProgress = p; }, langs);
+    if (app.workspace !== ws) return; // cleared or replaced meanwhile
+    if (hasPy && !allowPython) r.notes.unshift('Python tests were not run: Python support was not downloaded.');
+    app.testRun = r;
+    app.showCoverage = true;
+  } finally {
+    if (app.workspace === ws) { app.testStatus = 'done'; app.testProgress = null; }
+  }
+}
+
+export function stopTestRun(): void { stopTests(); }
+
+export function resetTests(): void {
+  stopTests();
+  app.testStatus = 'idle'; app.testProgress = null; app.testRun = null; app.showCoverage = true;
+}
 
 export async function runAnalysis(): Promise<void> {
   const ws = app.workspace;
@@ -74,6 +115,7 @@ export async function doAnalyze(allowPython: boolean): Promise<void> {
 
 function resetAnalysis(): void {
   stopWorker();
+  resetTests();
   app.analysis = null; app.analysisStatus = 'idle'; app.analysisMsg = ''; app.pythonSkipped = false;
   app.codeFile = null; app.selectedLine = null; app.collapsed = {};
 }

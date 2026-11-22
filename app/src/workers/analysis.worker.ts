@@ -16,6 +16,10 @@ async function getPyodide(url: string) {
   const mod = await import(/* @vite-ignore */ url + 'pyodide.mjs');
   pyodide = await mod.loadPyodide({ indexURL: url });
   pyodide.runPython(PY_SOURCE);
+  // Warm the service-worker cache with the pytest/coverage wheels too, so the user's single
+  // consent covers test runs and they work offline later. Failures here are harmless.
+  void fetch(url + 'wheels/manifest.json').then((r) => r.json())
+    .then((ws: string[]) => Promise.all(ws.map((w) => fetch(url + 'wheels/' + w)))).catch(() => {});
   return pyodide;
 }
 

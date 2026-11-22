@@ -2,6 +2,7 @@
   import { app } from '../lib/session.svelte';
   import { ROLE_LETTER, ROLE_LABEL, type FileAnalysis } from '../analysis/model';
   import HowToRead from './HowToRead.svelte';
+  import { lineCoverage, MISS_LABEL } from '../sandbox/coverage';
 
   let { fa, onclose }: { fa: FileAnalysis | null; onclose?: () => void } = $props();
 
@@ -10,14 +11,30 @@
   const blocks = $derived(fa && line ? fa.blocks.filter((b) => b.span.line === line) : []);
   const fnOf = (id: string | null) => (id && fa ? fa.functions.find((f) => f.id === id) : null);
   const enclosing = $derived(fa && line ? fa.blocks.filter((b) => b.headerEnd < line && line <= b.span.endLine && b.kind !== 'function' && b.kind !== 'class') : []);
+  const lc = $derived(line && app.codeFile ? lineCoverage(app.testRun?.coverage[app.codeFile], line) : null);
+  const testName = (id: string) => app.testRun?.results[id]?.name ?? app.testRun?.tests.find((t) => t.id === id)?.name ?? id;
+  const outcomeOf = (id: string) => app.testRun?.results[id]?.outcome ?? '';
   const level = $derived(enclosing.length ? Math.max(...enclosing.map((b) => b.level)) : 0);
 </script>
 
 <aside class="pane" aria-label="Evidence">
   {#if onclose}<button class="btn close" onclick={onclose} aria-label="Close panel">✕</button>{/if}
-  {#if line && fa}
+  {#if line && (fa || lc)}
     <h2>Line {line}</h2>
-    {#if !stmts.length && !blocks.length}
+    {#if lc}
+      <div class="stmt cov" data-testid="line-tests">
+        <h3>Tests</h3>
+        {#if lc.state === 'run'}
+          <p class="small">Run by {lc.tests.length} test{lc.tests.length === 1 ? '' : 's'} <span class="tag certain">certain</span> <span class="meta">from the test run</span></p>
+          <ul class="tests">{#each lc.tests as t (t)}<li><span class="oc {outcomeOf(t)}">{outcomeOf(t)}</span> {testName(t)}</li>{/each}</ul>
+        {:else if lc.state === 'import'}
+          <p class="small">Run only when the file was imported, not inside any test <span class="tag certain">certain</span></p>
+        {:else}
+          <p class="small"><strong>{MISS_LABEL[0].toUpperCase() + MISS_LABEL.slice(1)}.</strong> This doesn't mean the line is dead, only that none of the tests you gave reached it. <span class="tag certain">certain</span></p>
+        {/if}
+      </div>
+    {/if}
+    {#if fa && !stmts.length && !blocks.length}
       <p class="muted">No statement starts or runs on this line (blank, comment, or the inside of a longer expression).</p>
     {/if}
     {#each stmts as s (s.id)}
@@ -76,4 +93,9 @@
   .r-control { color: var(--r-control); background: var(--r-control-bg); } .r-pure { color: var(--r-pure); background: var(--r-pure-bg); }
   .r-unknown { color: var(--r-unknown); background: var(--r-unknown-bg); }
   code { font-size: 0.9em; }
+  .meta { color: var(--muted); font-size: 0.85rem; }
+  .tests { list-style: none; padding: 0; margin: 4px 0 0; font-size: 0.95rem; }
+  .tests li { margin-bottom: 4px; overflow-wrap: anywhere; }
+  .oc { font-size: 0.75rem; border-radius: 6px; padding: 0 6px; border: 1px solid var(--border); margin-right: 4px; }
+  .oc.passed { color: var(--ok); border-color: var(--ok); } .oc.failed, .oc.error, .oc.timeout, .oc.crashed { color: var(--bad); border-color: var(--bad); }
 </style>

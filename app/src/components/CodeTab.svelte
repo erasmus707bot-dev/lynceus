@@ -52,6 +52,9 @@
       {/each}
     </div>
     <div class="right">
+      {#if app.testRun && Object.keys(app.testRun.coverage).length}
+        <button class="btn" aria-pressed={app.showCoverage} onclick={() => (app.showCoverage = !app.showCoverage)} data-testid="coverage-toggle">{app.showCoverage ? 'Coverage: on' : 'Coverage: off'}</button>
+      {/if}
       <button class="btn" aria-pressed={app.wrap} onclick={() => (app.wrap = !app.wrap)}>{app.wrap ? 'Wrap: on' : 'Wrap: off'}</button>
       <button class="btn help-btn" onclick={() => { app.selectedLine = null; app.showHelp = !app.showHelp; }}>How to read this</button>
     </div>
@@ -62,7 +65,7 @@
   {/if}
   {#if src && !fa}<p class="callout warn">{src.path} was not analyzed.</p>{/if}
   <div class="split">
-    <div class="left">{#if src}<CodeView text={src.text} {fa} />{/if}</div>
+    <div class="left">{#if src}<CodeView text={src.text} {fa} path={src.path} />{/if}</div>
     <div class="right-pane"><div class="sticky"><EvidencePane {fa} /></div></div>
   </div>
   {#if sheetOpen}

@@ -1,0 +1,514 @@
+[
+  {
+    "matcher": "toBe",
+    "actual": 3,
+    "args": [
+      3
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBe",
+    "actual": 3,
+    "args": [
+      4
+    ],
+    "pass": false,
+    "message": "expect(received).toBe(expected)\n\nExpected: 4\nReceived: 3"
+  },
+  {
+    "matcher": "toBe",
+    "actual": {
+      "a": 1
+    },
+    "args": [
+      {
+        "a": 1
+      }
+    ],
+    "pass": false,
+    "message": "expect(received).toBe(expected)\n\nExpected: {a: 1}\nReceived: {a: 1}\n\nThe values are equal but not the same object. Use toEqual to compare contents."
+  },
+  {
+    "matcher": "toBe",
+    "actual": 3,
+    "args": [
+      3
+    ],
+    "not": true,
+    "pass": false,
+    "message": "expect(received).not.toBe(expected)\n\nExpected: not 3\nReceived: 3"
+  },
+  {
+    "matcher": "toBe",
+    "actual": {
+      "$nan": 1
+    },
+    "args": [
+      {
+        "$nan": 1
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toEqual",
+    "actual": {
+      "a": [
+        1,
+        {
+          "b": 2
+        }
+      ]
+    },
+    "args": [
+      {
+        "a": [
+          1,
+          {
+            "b": 2
+          }
+        ]
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toEqual",
+    "actual": {
+      "a": 1,
+      "b": {
+        "$undefined": 1
+      }
+    },
+    "args": [
+      {
+        "a": 1
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toEqual",
+    "actual": [
+      1,
+      2
+    ],
+    "args": [
+      [
+        1,
+        2,
+        3
+      ]
+    ],
+    "pass": false,
+    "message": "expect(received).toEqual(expected)\n\nExpected: [1, 2, 3]\nReceived: [1, 2]"
+  },
+  {
+    "matcher": "toEqual",
+    "actual": {
+      "$map": [
+        [
+          "k",
+          1
+        ]
+      ]
+    },
+    "args": [
+      {
+        "$map": [
+          [
+            "k",
+            1
+          ]
+        ]
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toEqual",
+    "actual": {
+      "$set": [
+        1,
+        2
+      ]
+    },
+    "args": [
+      {
+        "$set": [
+          2,
+          1
+        ]
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toEqual",
+    "actual": {
+      "$date": "2026-01-01T00:00:00.000Z"
+    },
+    "args": [
+      {
+        "$date": "2026-01-01T00:00:00.000Z"
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toStrictEqual",
+    "actual": {
+      "a": 1,
+      "b": {
+        "$undefined": 1
+      }
+    },
+    "args": [
+      {
+        "a": 1
+      }
+    ],
+    "pass": false,
+    "message": "expect(received).toStrictEqual(expected)\n\nExpected: {a: 1}\nReceived: {a: 1, b: undefined}"
+  },
+  {
+    "matcher": "toBeTruthy",
+    "actual": 0,
+    "args": [],
+    "pass": false,
+    "message": "expect(received).toBeTruthy()\n\nReceived: 0"
+  },
+  {
+    "matcher": "toBeTruthy",
+    "actual": "x",
+    "args": [],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeFalsy",
+    "actual": "",
+    "args": [],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeNull",
+    "actual": null,
+    "args": [],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeUndefined",
+    "actual": {
+      "$undefined": 1
+    },
+    "args": [],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeDefined",
+    "actual": {
+      "$undefined": 1
+    },
+    "args": [],
+    "pass": false,
+    "message": "expect(received).toBeDefined()\n\nReceived: undefined"
+  },
+  {
+    "matcher": "toBeNaN",
+    "actual": {
+      "$nan": 1
+    },
+    "args": [],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeGreaterThan",
+    "actual": 5,
+    "args": [
+      3
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeGreaterThan",
+    "actual": 2,
+    "args": [
+      3
+    ],
+    "pass": false,
+    "message": "expect(received).toBeGreaterThan(expected)\n\nExpected: > 3\nReceived:   2"
+  },
+  {
+    "matcher": "toBeGreaterThanOrEqual",
+    "actual": 3,
+    "args": [
+      3
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeLessThan",
+    "actual": 3,
+    "args": [
+      3
+    ],
+    "pass": false,
+    "message": "expect(received).toBeLessThan(expected)\n\nExpected: < 3\nReceived:   3"
+  },
+  {
+    "matcher": "toBeLessThanOrEqual",
+    "actual": 3,
+    "args": [
+      3
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeCloseTo",
+    "actual": 0.30000000000000004,
+    "args": [
+      0.3
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeCloseTo",
+    "actual": 0.31,
+    "args": [
+      0.3,
+      2
+    ],
+    "pass": false,
+    "message": "expect(received).toBeCloseTo(expected, precision)\n\nExpected: 0.3 (to 2 digits)\nReceived: 0.31"
+  },
+  {
+    "matcher": "toContain",
+    "actual": [
+      1,
+      2,
+      3
+    ],
+    "args": [
+      2
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toContain",
+    "actual": "hello",
+    "args": [
+      "ell"
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toContain",
+    "actual": [
+      {
+        "a": 1
+      }
+    ],
+    "args": [
+      {
+        "a": 1
+      }
+    ],
+    "pass": false,
+    "message": "expect(received).toContain(expected)\n\nExpected item: {a: 1}\nReceived: [{a: 1}]"
+  },
+  {
+    "matcher": "toContainEqual",
+    "actual": [
+      {
+        "a": 1
+      }
+    ],
+    "args": [
+      {
+        "a": 1
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toHaveLength",
+    "actual": [
+      1,
+      2
+    ],
+    "args": [
+      2
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toHaveLength",
+    "actual": "abc",
+    "args": [
+      2
+    ],
+    "pass": false,
+    "message": "expect(received).toHaveLength(expected)\n\nExpected length: 2\nReceived length: 3\nReceived: \"abc\""
+  },
+  {
+    "matcher": "toHaveProperty",
+    "actual": {
+      "a": {
+        "b": [
+          5
+        ]
+      }
+    },
+    "args": [
+      "a.b[0]",
+      5
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toHaveProperty",
+    "actual": {
+      "a": 1
+    },
+    "args": [
+      "c"
+    ],
+    "pass": false,
+    "message": "expect(received).toHaveProperty(path)\n\nPath: \"c\"\nReceived: (property not found)"
+  },
+  {
+    "matcher": "toMatch",
+    "actual": "Lynceus",
+    "args": [
+      {
+        "$regex": "^Lyn"
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toMatch",
+    "actual": "Lynceus",
+    "args": [
+      "xyz"
+    ],
+    "pass": false,
+    "message": "expect(received).toMatch(expected)\n\nExpected pattern: \"xyz\"\nReceived string: \"Lynceus\""
+  },
+  {
+    "matcher": "toMatchObject",
+    "actual": {
+      "a": 1,
+      "b": {
+        "c": 2,
+        "d": 3
+      }
+    },
+    "args": [
+      {
+        "b": {
+          "c": 2
+        }
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toThrow",
+    "actual": {
+      "$throws": "boom"
+    },
+    "args": [],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toThrow",
+    "actual": {
+      "$throws": "boom"
+    },
+    "args": [
+      "oom"
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toThrow",
+    "actual": {
+      "$throws": "boom"
+    },
+    "args": [
+      {
+        "$regex": "b.om"
+      }
+    ],
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toThrow",
+    "actual": {
+      "$throws": "boom"
+    },
+    "args": [
+      "nope"
+    ],
+    "pass": false,
+    "message": "expect(received).toThrow(expected)\n\nExpected: \"nope\"\nReceived error: [Error: boom]"
+  },
+  {
+    "matcher": "toThrow",
+    "actual": {
+      "$fn": 1
+    },
+    "args": [],
+    "pass": false,
+    "message": "expect(received).toThrow()\n\nReceived function did not throw"
+  },
+  {
+    "matcher": "toThrow",
+    "actual": {
+      "$fn": 1
+    },
+    "args": [],
+    "not": true,
+    "pass": true,
+    "message": ""
+  },
+  {
+    "matcher": "toBeInstanceOf",
+    "actual": {
+      "$error": "x"
+    },
+    "args": [
+      "$Error"
+    ],
+    "pass": true,
+    "message": ""
+  }
+]

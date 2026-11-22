@@ -9,12 +9,18 @@ const require = createRequire(import.meta.url);
 const PYODIDE_DIR = path.dirname(require.resolve('pyodide/package.json'));
 const PYODIDE_VERSION: string = require('pyodide/package.json').version;
 const PYODIDE_FILES = ['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json'];
-const PYODIDE_BYTES = PYODIDE_FILES.reduce((n, f) => n + fs.statSync(path.join(PYODIDE_DIR, f)).size, 0);
+// The pytest/coverage wheels (scripts/vendor-wheels.mjs) are part of the same one-time Python download.
+const WHEELS_DIR = path.resolve('public/vendor/pyodide/wheels');
+const WHEEL_FILES: string[] = JSON.parse(fs.readFileSync('scripts/wheels.json', 'utf8')).map((w: { file: string }) => w.file);
+const wheelBytes = WHEEL_FILES.reduce((n, f) => { try { return n + fs.statSync(path.join(WHEELS_DIR, f)).size; } catch { return n; } }, 0);
+const PYODIDE_BYTES = PYODIDE_FILES.reduce((n, f) => n + fs.statSync(path.join(PYODIDE_DIR, f)).size, 0) + wheelBytes;
 
 // Content-Security-Policy, delivered by <meta> because GitHub Pages can't set headers.
 // Verified in Phase 0 (docs/PHASE0_REPORT.md). Added to the BUILD only: Vite's dev server
 // needs inline scripts and a websocket that this policy correctly forbids.
-// 'unsafe-eval' is kept for the Phase 3 JS test runner (blob: workers inherit this policy).
+// 'unsafe-eval' is needed by the JS test runner to run uploaded code (new Function) in the sandbox
+// worker, which inherits this policy because it is started from a blob: URL. It does not loosen
+// network blocking: connect-src still governs every request. Pyodide needs only 'wasm-unsafe-eval'.
 export const CSP = [
   "default-src 'self'",
   "script-src 'self' 'wasm-unsafe-eval' 'unsafe-eval'",
@@ -72,6 +78,14 @@ function swManifest(): Plugin {
 export default defineConfig({
   base: '/', // lynceus.scottchristensen.dev (decided 2026-11-22); relative asset URLs still work on localhost
   plugins: [svelte(), cspMeta(), swManifest()],
+  // Browser stand-ins for the Node built-ins Babel and istanbul touch (JS test runner, sandbox worker only).
+  resolve: {
+    alias: [
+      { find: /^path$/, replacement: path.resolve('src/sandbox/shims/path.ts') },
+      { find: /^crypto$/, replacement: path.resolve('src/sandbox/shims/crypto.ts') },
+      { find: /^assert$/, replacement: path.resolve('src/sandbox/shims/assert.cjs') },
+    ],
+  },
   build: { target: 'es2022', sourcemap: false },
   worker: { format: 'es' },
   define: { __PYODIDE_VERSION__: JSON.stringify(PYODIDE_VERSION), __PYODIDE_BYTES__: String(PYODIDE_BYTES) },

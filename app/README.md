@@ -28,3 +28,10 @@ Needs Node 20.19+ or 22.12+ (Vite 8).
 - Drag files or a folder anywhere on the Input screen. Dropping a single file on the paste box fills the box instead.
 - Role rules live in `rules/javascript.json` and `rules/python.json`. Edit them to teach Lynceus new I/O or pure functions.
 - Static hosts must serve `.mjs` as JavaScript and `.wasm` as `application/wasm` for Python to load.
+
+## Phase 3 notes (tests)
+
+- `npm run vendor` also downloads the pinned pytest/coverage wheels from PyPI (sha256-checked, see `scripts/wheels.json`). That needs internet at build time only. Offline build: `node scripts/vendor-wheels.mjs --from <folder with the .whl files>`. Behind a proxy: `NODE_USE_ENV_PROXY=1`.
+- User code runs only in `src/workers/sandbox.worker.ts`: a fresh worker per run, started from a blob: URL, network stubbed before any user code (`src/sandbox/guard.ts`, `py_guard.py`).
+- Time limits (Tests tab, "Time limits"): 10 s per test and 60 s per run by default. A hung test is reported by name and the rest run again in a new worker.
+- JS runner: ES modules and `require` between uploaded files, `describe/it/test`, hooks, and the matchers listed in `src/sandbox/expect.ts` (pinned by `tests/fixtures/expect-snapshots.json`). Node built-ins, npm packages, `jest.fn` and snapshots fail that one test with a reason.

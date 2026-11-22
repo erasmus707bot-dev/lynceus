@@ -4,6 +4,7 @@
   import InputScreen from './components/InputScreen.svelte';
   import Placeholder from './components/Placeholder.svelte';
   import CodeTab from './components/CodeTab.svelte';
+  import TestsTab from './components/TestsTab.svelte';
   import { app } from './lib/session.svelte';
 </script>
 
@@ -22,7 +23,7 @@
   {:else if app.tab === 'code'}
     <CodeTab />
   {:else if app.tab === 'tests'}
-    <Placeholder title="Tests" phase={3} what="running the tests on this device with per-test coverage." />
+    <TestsTab />
   {:else}
     <Placeholder title="Report" phase={5} what="review progress and Markdown/PDF export." />
   {/if}
