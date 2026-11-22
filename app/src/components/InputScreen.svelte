@@ -71,105 +71,117 @@
   <h1 id="input-h">Review some code</h1>
   <p class="callout blue">Everything stays on this device. Nothing is uploaded, and by default nothing is saved after you close this tab.</p>
 
-  <div class="card">
-    <h2><label for="paste">Paste code</label></h2>
-    <textarea id="paste" class="code" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off"
-      placeholder="Paste one file here" bind:value={app.pasteText}></textarea>
-    <div class="grid2">
-      <label>File name (optional)
-        <input type="text" bind:value={app.pasteName} placeholder={pastedName(guess?.lang ?? 'python', 'code')} autocapitalize="off" spellcheck="false" />
-      </label>
-      <label>Language
-        <select bind:value={app.pasteLang}>
-          <option value="auto">Auto-detect</option>
-          <option value="python">Python</option>
-          <option value="javascript">JavaScript</option>
-        </select>
-      </label>
+  <div class="cols">
+  <div class="col">
+    <div class="card">
+      <h2><label for="paste">Paste code</label></h2>
+      <textarea id="paste" class="code" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off"
+        placeholder="Paste one file here" bind:value={app.pasteText}></textarea>
+      <div class="grid2">
+        <label>File name (optional)
+          <input type="text" bind:value={app.pasteName} placeholder={pastedName(guess?.lang ?? 'python', 'code')} autocapitalize="off" spellcheck="false" />
+        </label>
+        <label>Language
+          <select bind:value={app.pasteLang}>
+            <option value="auto">Auto-detect</option>
+            <option value="python">Python</option>
+            <option value="javascript">JavaScript</option>
+          </select>
+        </label>
+      </div>
+      {#if guess && app.pasteLang === 'auto'}
+        <p class="muted small" data-testid="guess">
+          Looks like <strong>{guess.lang === 'python' ? 'Python' : 'JavaScript'}</strong>
+          <span class="tag">heuristic</span>{guess.confident ? '' : ' (not sure: set it by hand if wrong)'}
+        </p>
+      {/if}
     </div>
-    {#if guess && app.pasteLang === 'auto'}
-      <p class="muted small" data-testid="guess">
-        Looks like <strong>{guess.lang === 'python' ? 'Python' : 'JavaScript'}</strong>
-        <span class="tag">heuristic</span>{guess.confident ? '' : ' (not sure: set it by hand if wrong)'}
-      </p>
-    {/if}
-  </div>
 
-  <div class="card">
-    <h2>Upload files or a .zip</h2>
-    <label class="btn upload">
-      {reading ? 'Reading…' : 'Choose files'}
-      <input type="file" multiple accept=".py,.js,.mjs,.cjs,.jsx,.zip,application/zip" onchange={onFiles} class="sr-only" data-testid="file-input" />
-    </label>
-    {#if app.pending.length}
-      <ul class="files" data-testid="pending">
-        {#each app.pending as f (f.path)}
-          <li>
-            <span class="path">{f.path}</span>
-            <span class="meta">{f.lang === 'python' ? 'Python' : 'JS'} · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span>
-            <button class="btn small-btn" onclick={() => removePending(f.path)} aria-label={'Remove ' + f.path}>✕</button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
-    {#if app.pendingSkipped.length}
-      <details class="skipped" open>
-        <summary>{app.pendingSkipped.length} file{app.pendingSkipped.length === 1 ? '' : 's'} not included</summary>
-        <ul data-testid="skipped">
-          {#each app.pendingSkipped as s (s.path + s.reason)}<li><span class="path">{s.path}</span> <span class="muted">{s.reason}</span></li>{/each}
+    <details class="card opt">
+      <summary><h2>Optional: tests, diff, spec</h2></summary>
+      <label for="tests">Tests (if not in the upload)</label>
+      <textarea id="tests" class="code" rows="6" spellcheck="false" bind:value={app.testsText} placeholder="def test_…  or  test('…', () => …)"></textarea>
+      <label for="diff">Git diff (unified format). Review will focus on the changed functions.</label>
+      <textarea id="diff" class="code" rows="6" spellcheck="false" bind:value={app.diffText} placeholder="diff --git a/… b/…"></textarea>
+      <label for="spec">Spec: what the code should do, one bullet per line</label>
+      <textarea id="spec" rows="5" bind:value={app.specText} placeholder="- Users can reset their password&#10;- Totals round to cents"></textarea>
+    </details>
+
+  </div>
+  <div class="col">
+    <div class="card">
+      <h2>Upload files or a .zip</h2>
+      <label class="btn upload">
+        {reading ? 'Reading…' : 'Choose files'}
+        <input type="file" multiple accept=".py,.js,.mjs,.cjs,.jsx,.zip,application/zip" onchange={onFiles} class="sr-only" data-testid="file-input" />
+      </label>
+      {#if app.pending.length}
+        <ul class="files" data-testid="pending">
+          {#each app.pending as f (f.path)}
+            <li>
+              <span class="path">{f.path}</span>
+              <span class="meta">{f.lang === 'python' ? 'Python' : 'JS'} · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span>
+              <button class="btn small-btn" onclick={() => removePending(f.path)} aria-label={'Remove ' + f.path}>✕</button>
+            </li>
+          {/each}
         </ul>
-      </details>
-    {/if}
-  </div>
-
-  <details class="card opt">
-    <summary><h2>Optional: tests, diff, spec</h2></summary>
-    <label for="tests">Tests (if not in the upload)</label>
-    <textarea id="tests" class="code" rows="6" spellcheck="false" bind:value={app.testsText} placeholder="def test_…  or  test('…', () => …)"></textarea>
-    <label for="diff">Git diff (unified format). Review will focus on the changed functions.</label>
-    <textarea id="diff" class="code" rows="6" spellcheck="false" bind:value={app.diffText} placeholder="diff --git a/… b/…"></textarea>
-    <label for="spec">Spec: what the code should do, one bullet per line</label>
-    <textarea id="spec" rows="5" bind:value={app.specText} placeholder="- Users can reset their password&#10;- Totals round to cents"></textarea>
-  </details>
-
-  <div class="card">
-    {#if draft.length}
-      <p class="callout {limits.level === 'stop' ? 'stop' : limits.level === 'warn' ? 'warn' : 'sage'}" data-testid="limits" role={limits.level === 'stop' ? 'alert' : undefined}>
-        {limits.message}
-      </p>
-    {/if}
-    {#if error}<p class="callout stop" role="alert" data-testid="error">{error}</p>{/if}
-    <button class="btn primary big" onclick={load} disabled={reading || limits.level === 'stop'}>Review this code</button>
-  </div>
-
-  {#if app.workspace}
-    <div class="card" data-testid="loaded">
-      <h2>Loaded</h2>
-      <ul class="files">
-        {#each app.workspace.files as f (f.path)}
-          <li><span class="path">{f.path}</span>
-            <span class="meta">{f.lang === 'python' ? 'Python' : 'JS'} ({f.langSource}) · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span></li>
-        {/each}
-      </ul>
-      <p class="muted small">
-        {app.workspace.files.filter((f) => f.isTest).length} test file(s) ·
-        diff {app.workspace.diff.trim() ? 'supplied' : 'none'} ·
-        spec {app.workspace.spec.trim() ? app.workspace.spec.split('\n').filter((l) => l.trim()).length + ' bullet(s)' : 'none'}
-      </p>
+      {/if}
+      {#if app.pendingSkipped.length}
+        <details class="skipped" open>
+          <summary>{app.pendingSkipped.length} file{app.pendingSkipped.length === 1 ? '' : 's'} not included</summary>
+          <ul data-testid="skipped">
+            {#each app.pendingSkipped as s (s.path + s.reason)}<li><span class="path">{s.path}</span> <span class="muted">{s.reason}</span></li>{/each}
+          </ul>
+        </details>
+      {/if}
     </div>
-  {/if}
 
-  <div class="card">
-    <h2>Privacy on this device</h2>
-    <label class="switch">
-      <input type="checkbox" checked={app.settings.remember} onchange={(e) => setRemember((e.currentTarget as HTMLInputElement).checked)} data-testid="remember" />
-      <span>Remember this session on this device</span>
-    </label>
-    <p class="muted small">Off by default. Turn it on only on your own phone or computer. While it's on, loaded code is saved in this browser (IndexedDB) until you press <strong>Clear everything</strong>. Only your theme and settings are always saved.</p>
+    <div class="card">
+      {#if draft.length}
+        <p class="callout {limits.level === 'stop' ? 'stop' : limits.level === 'warn' ? 'warn' : 'sage'}" data-testid="limits" role={limits.level === 'stop' ? 'alert' : undefined}>
+          {limits.message}
+        </p>
+      {/if}
+      {#if error}<p class="callout stop" role="alert" data-testid="error">{error}</p>{/if}
+      <button class="btn primary big" onclick={load} disabled={reading || limits.level === 'stop'}>Review this code</button>
+    </div>
+
+    {#if app.workspace}
+      <div class="card" data-testid="loaded">
+        <h2>Loaded</h2>
+        <ul class="files">
+          {#each app.workspace.files as f (f.path)}
+            <li><span class="path">{f.path}</span>
+              <span class="meta">{f.lang === 'python' ? 'Python' : 'JS'} ({f.langSource}) · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span></li>
+          {/each}
+        </ul>
+        <p class="muted small">
+          {app.workspace.files.filter((f) => f.isTest).length} test file(s) ·
+          diff {app.workspace.diff.trim() ? 'supplied' : 'none'} ·
+          spec {app.workspace.spec.trim() ? app.workspace.spec.split('\n').filter((l) => l.trim()).length + ' bullet(s)' : 'none'}
+        </p>
+      </div>
+    {/if}
+
+    <div class="card">
+      <h2>Privacy on this device</h2>
+      <label class="switch">
+        <input type="checkbox" checked={app.settings.remember} onchange={(e) => setRemember((e.currentTarget as HTMLInputElement).checked)} data-testid="remember" />
+        <span>Remember this session on this device</span>
+      </label>
+      <p class="muted small">Off by default. Turn it on only on your own phone or computer. While it's on, loaded code is saved in this browser (IndexedDB) until you press <strong>Clear everything</strong>. Only your theme and settings are always saved.</p>
+    </div>
+  </div>
   </div>
 </section>
 
 <style>
+  /* Two columns on wide screens: what you paste on the left, files + actions on the right. */
+  .cols { display: grid; gap: 0 20px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1100px) {
+    .cols { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }
+    #paste { min-height: 55vh; }
+  }
   textarea { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); resize: vertical; }
   input[type='text'], select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
   label { display: block; margin: 10px 0 4px; }

@@ -22,7 +22,8 @@
 
 <style>
   .nav { position: sticky; top: 0; z-index: 10; background: var(--surface); border-bottom: 1px solid var(--border); }
-  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; max-width: 1100px; margin: 0 auto; padding: 8px 16px; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 16px; }
+  @media (min-width: 1100px) { .row { padding: 8px 32px; } }
   .brand { font-weight: 700; font-size: 1.2rem; color: var(--gold); letter-spacing: 0.02em; }
   .pill { font-size: 0.85rem; padding: 2px 10px; border-radius: 999px; background: var(--warn-bg); border: 1px solid var(--border); }
   .grow { flex: 1; }
