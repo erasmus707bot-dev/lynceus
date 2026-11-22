@@ -29,7 +29,8 @@
 <TabBar />
 
 <style>
-  main { max-width: 860px; margin: 0 auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+  main { margin: 0 auto; padding: 16px 16px calc(96px + env(safe-area-inset-bottom)); }
+  @media (min-width: 1100px) { main { padding-left: 32px; padding-right: 32px; } }
   @media (min-width: 760px) { main { padding-bottom: 32px; } }
   .notice { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
 </style>
