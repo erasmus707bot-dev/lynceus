@@ -1,0 +1,22 @@
+# Lynceus app
+
+```bash
+cd ~/Lynceus/app
+npm ci --legacy-peer-deps   # npm 10.9 crashes on an optional Vitest peer without this flag
+npm run dev       # http://localhost:5173  (no CSP and no service worker in dev)
+npm test          # unit tests (Vitest)
+npm run check     # type check (svelte-check)
+npm run build     # production build -> dist/ (CSP meta + service worker file list added)
+npm run e2e       # end-to-end checks against dist/ (needs Playwright + Chromium)
+```
+
+Needs Node 20.19+ or 22.12+ (Vite 8).
+
+## Privacy rules built in so far
+
+- User code lives in page memory only. Closing the tab forgets it.
+- **Clear everything** wipes memory, the IndexedDB session, sessionStorage, and turns Remember off.
+- **Remember this session on this device** is opt-in and saves to IndexedDB. A "● Remembering" pill shows while it's on.
+- localStorage holds settings only (whitelisted fields: theme, size limits, remember flag).
+- The service worker caches the built app files only (list generated at build time) and ignores other origins.
+- CSP is delivered by `<meta>` in the build (see `vite.config.ts`, verified in Phase 0).

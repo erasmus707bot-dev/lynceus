@@ -1,0 +1,1 @@
+export const process = { env: { NODE_ENV: 'production' }, cwd: () => '/', platform: 'browser', version: 'v0', versions: {}, emitWarning() {}, nextTick: (f, ...a) => Promise.resolve().then(() => f(...a)) };

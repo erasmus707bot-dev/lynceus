@@ -1,0 +1,154 @@
+{
+  "started": "2026-11-22T03:58:42.419Z",
+  "checks": {
+    "b_istanbul_worker": {
+      "pass": true,
+      "results": [
+        {
+          "test": "classify > negative",
+          "outcome": "passed"
+        },
+        {
+          "test": "classify > loop",
+          "outcome": "passed"
+        },
+        {
+          "test": "classify > fails on purpose",
+          "outcome": "failed",
+          "message": "expected \"zero\" toBe \"small\""
+        },
+        {
+          "test": "async > resolves",
+          "outcome": "passed"
+        },
+        {
+          "test": "async > throws",
+          "outcome": "passed"
+        },
+        {
+          "test": "async > uses fs",
+          "outcome": "failed",
+          "message": "Node built-in \"fs\" is not available in Lynceus"
+        }
+      ],
+      "missing": [
+        19,
+        20
+      ],
+      "timing": {
+        "instrumentMs": 51,
+        "runMs": 2
+      }
+    },
+    "c_exfil_blocked": {
+      "pass": true,
+      "py": "{'import js': 'blocked: ImportError: network blocked by Lynceus: import js', 'import pyodide.http': 'blocked: ImportError: network blocked by Lynceus: import pyodide', 'import pyodide.ffi': 'blocked: ImportError: network blocked by Lynceus: import pyodide', 'import micropip': 'blocked: ImportError: network blocked by Lynceus: import micropip', 'import _pyodide': 'blocked: ImportError: network blocked by Lynceus: import _pyodide', 'import pyodide_js': 'blocked: ImportError: network blocked by Lynceus: import pyodide_js', 'socket.connect': 'blocked: OSError: network blocked by Lynceus', 'socket.create_connection': 'blocked: OSError: network blocked by Lynceus', 'urllib.request.urlopen': 'blocked: OSError: network blocked by Lynceus', 'http.client': 'blocked: OSError: network blocked by Lynceus', 'gc bypass -> js.fetch/XHR': 'blocked: LookupError: js module not reachable via gc', 'gc deep bypass -> JsProxy.fetch/XHR': 'blocked: LookupError: no JsProxy with fetch reachable via gc'}",
+      "js": [
+        "EXFIL_RESULTS {\"fetch\":\"blocked: network blocked by Lynceus (fetch)\",\"XMLHttpRequest\":\"blocked: network blocked by Lynceus (XMLHttpRequest)\",\"WebSocket\":\"blocked: network blocked by Lynceus (WebSocket)\",\"EventSource\":\"blocked: network blocked by Lynceus (EventSource)\",\"importScripts\":\"blocked: network blocked by Lynceus (importScripts)\",\"navigator.sendBeacon\":\"blocked: not present in workers\",\"nested Worker\":\"blocked: network blocked by Lynceus (Worker)\",\"prototype bypass fetch\":\"blocked: network blocked by Lynceus (fetch)\",\"dynamic import()\":\"blocked: Failed to fetch dynamically imported module: http://127.0.0.1:8001/hit.js?d=LYNCEUS_CANARY_JS-import\",\"constructor walk fetch\":\"blocked: network blocked by Lynceus (fetch)\"}"
+      ],
+      "sinkHits": [],
+      "foreignRequestsSeenByBrowser": [
+        {
+          "url": "blob:http://127.0.0.1:8000/1abc5647-bb2b-4af2-8ed6-3e6b1ca0f17c",
+          "phase": "c-exfil",
+          "req": {
+            "_type": "Request",
+            "_guid": "request@780935c96f8274c9055e12abfd5baab1"
+          }
+        },
+        {
+          "url": "blob:http://127.0.0.1:8000/b50d4447-c680-4084-b7a9-a6ee053364e8",
+          "phase": "c-exfil",
+          "req": {
+            "_type": "Request",
+            "_guid": "request@151f4f2f6232a9b3530acd4f061e7a82"
+          }
+        },
+        {
+          "url": "http://127.0.0.1:8001/hit.js?d=LYNCEUS_CANARY_JS-import",
+          "phase": "c-exfil",
+          "req": {
+            "_type": "Request",
+            "_guid": "request@529a7b31f68d8073a5055954070cc32d"
+          }
+        }
+      ]
+    },
+    "a_pyodide_online": {
+      "pass": true,
+      "core": "PyTracer",
+      "timing": {
+        "loadMs": 1678,
+        "prepMs": 163,
+        "runMs": 1847
+      },
+      "missing": [
+        5,
+        20,
+        21
+      ]
+    },
+    "c_csp_alone_blocks_in_blob_worker": {
+      "pass": true,
+      "sinkHits": [],
+      "cspConsole": []
+    },
+    "info_url_worker_without_stubs_LEAKS_as_expected": {
+      "pass": true,
+      "sinkHits": [
+        "/hit?d=LYNCEUS_CANARY_JS-fetch",
+        "/hit?d=LYNCEUS_CANARY_JS-xhr",
+        "/ws",
+        "/hit?d=LYNCEUS_CANARY_JS-es",
+        "/hit?d=LYNCEUS_CANARY_JS-protofetch",
+        "/hit.js?d=LYNCEUS_CANARY_JS-import",
+        "/hit?d=LYNCEUS_CANARY_JS-ctorfetch",
+        "/hit?d=LYNCEUS_CANARY_JS-nested"
+      ],
+      "meaning": "A worker loaded by URL does not inherit a <meta> CSP. Lynceus must create workers from blob: URLs."
+    },
+    "info_js_without_unsafe_eval": {
+      "pass": false,
+      "result": [
+        {
+          "test": "/src/calc.test.js",
+          "outcome": "error",
+          "message": "could not load test file: Evaluating a string as JavaScript violates the following Content Security Policy directive because 'unsafe-eval' is not an allowed source of script: script-src 'self' 'wasm-unsafe-eval'\".\n"
+        }
+      ],
+      "cspConsole": []
+    },
+    "info_py_without_unsafe_eval": {
+      "pass": true,
+      "result": "ran",
+      "cspConsole": []
+    },
+    "a_pyodide_offline": {
+      "pass": true,
+      "timing": {
+        "loadMs": 1635,
+        "prepMs": 151,
+        "runMs": 2085
+      },
+      "requestsWhileOffline": 31
+    },
+    "b_js_offline": {
+      "pass": true
+    },
+    "zero_foreign_requests_main_context": {
+      "pass": true,
+      "foreignAttemptsBlockedByBrowser": [
+        {
+          "url": "http://127.0.0.1:8001/hit.js?d=LYNCEUS_CANARY_JS-import",
+          "phase": "c-exfil",
+          "failure": "csp"
+        }
+      ],
+      "foreignSent": [],
+      "totalRequests": 128
+    }
+  },
+  "notes": [],
+  "phase": "a-offline",
+  "finished": "2026-11-22T03:59:21.258Z"
+}
