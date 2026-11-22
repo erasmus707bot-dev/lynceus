@@ -53,3 +53,10 @@ Needs Node 20.19+ or 22.12+ (Vite 8).
 - **Lens:** a "Lens" button on the Lines pass. Scopes come from Babel's scope tracker (JS) and from Lynceus's own LEGB scope pass (Python).
 - **Report tab:** Markdown download, plus Print / Save as PDF using a print stylesheet. No source code unless "Include code excerpts" is ticked; possible secrets are always masked.
 - Review ticks and notes live on the workspace, so they are saved only when **Remember** is on.
+
+## Phase 6 notes (demos and deploy)
+
+- **Demos:** the two projects in `../demo/` are bundled into the app by `src/lib/demo.ts` (Vite `import.meta.glob`, so they work offline). The dev server is allowed to read `../demo` (`server.fs.allow` in `vite.config.ts`).
+- If you edit a demo, regenerate its `change.diff` so it still matches. `tests/unit/demo.test.ts` fails if a hunk no longer applies.
+- `node tests/e2e/demo-probe.mjs [javascript|python]` (after `npm run build`) prints each demo's test results and the full Queue with every factor. It was used for the hand check in `docs/PHASE6_REPORT.md`.
+- **Deploy:** `.github/workflows/deploy.yml` (at the repository root) builds `app/` and publishes `app/dist` to GitHub Pages on every push to `main`. Steps for the repository, Porkbun DNS and the checks are in `docs/DEPLOY.md`.

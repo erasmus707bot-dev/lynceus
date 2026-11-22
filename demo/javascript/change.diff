@@ -1,0 +1,13 @@
+--- a/cart.js
++++ b/cart.js
+@@ -48,8 +48,9 @@
+ }
+ 
+ export function shippingCost(subtotal, country) {
+-  if (subtotal > 40) return 0;
++  if (subtotal >= 50) return 0;
+   if (country === 'US') return 5;
++  if (country === 'CA') return 8;
+   return 15;
+ }
+ 

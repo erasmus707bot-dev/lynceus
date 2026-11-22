@@ -1,0 +1,26 @@
+--- a/inventory.py
++++ b/inventory.py
+@@ -14,12 +14,13 @@
+     return item["qty"] < threshold
+ 
+ 
+-def reserve(stock, sku, qty):
++def reserve(stock, sku, qty, history=[]):
+     if sku not in stock:
+         raise KeyError(sku)
+     if stock[sku] < qty:
+         return False
+     stock[sku] -= qty
++    history.append((sku, qty))
+     return True
+ 
+ 
+@@ -45,6 +46,8 @@
+     total = 0
+     for line in order["lines"]:
+         total += prices[line["sku"]] * line["qty"]
++    if order.get("express"):
++        total += 9.99
+     return round(total, 2)
+ 
+ 

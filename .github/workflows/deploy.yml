@@ -1,0 +1,59 @@
+# Builds Lynceus and publishes it to GitHub Pages on every push to main (docs/DEPLOY.md).
+# Pyodide comes from the npm package (checked by package-lock.json integrity hashes); the pytest wheels
+# are downloaded at build time and refused unless their sha256 matches app/scripts/wheels.json.
+# Actions are pinned to full commit SHAs (the tag each SHA had, and its date, is in the comment).
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7, 2026-07-17
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7, 2026-10-07
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      # npm 10.9 crashes on an optional Vitest peer without --legacy-peer-deps (see app/README.md).
+      - run: npm ci --legacy-peer-deps
+      - run: npm test
+      - run: npm run check
+      # prebuild runs scripts/vendor-pyodide.mjs and scripts/vendor-wheels.mjs (sha256-checked).
+      - run: npm run build
+      - name: Check the build has the Python files and the service worker
+        run: |
+          test -f dist/vendor/pyodide/pyodide.asm.wasm
+          test -f dist/sw.js
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5, 2026-04-08
+        with:
+          path: app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5, 2026-09-01

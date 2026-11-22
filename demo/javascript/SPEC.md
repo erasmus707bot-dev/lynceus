@@ -1,0 +1,6 @@
+- A line's total is its price times its quantity
+- Members get 15% off when they buy 3 or more of a book over $20, and 10% off when it is $20 or less
+- Members get 5% off books when they buy fewer than 3
+- A coupon takes its percentage off items that are not books or gift cards
+- Shipping is free from $50; under that it is $5 in the US, $8 in Canada and $15 elsewhere
+- Checkout returns the subtotal, discount, shipping and total

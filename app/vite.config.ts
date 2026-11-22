@@ -87,6 +87,8 @@ export default defineConfig({
     ],
   },
   build: { target: 'es2022', sourcemap: false },
+  // The bundled demo projects live in ../demo (src/lib/demo.ts); let the dev server read them.
+  server: { fs: { allow: ['.', '../demo'] } },
   worker: { format: 'es' },
   define: { __PYODIDE_VERSION__: JSON.stringify(PYODIDE_VERSION), __PYODIDE_BYTES__: String(PYODIDE_BYTES) },
   test: { environment: 'jsdom', include: ['tests/unit/**/*.test.ts'] },

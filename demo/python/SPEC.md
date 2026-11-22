@@ -1,0 +1,5 @@
+- An item needs restocking when its quantity is at or below the threshold (5 by default)
+- Reserving stock takes it off the shelf, and refuses when there is not enough
+- Priority orders are filled from a warehouse in the order's region; other orders go to the backlog
+- An order's value is the sum of price times quantity, plus $9.99 for express delivery
+- Settings load from a JSON file

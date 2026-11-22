@@ -5,6 +5,7 @@
   import { guessLang } from '../lib/detect';
   import { checkLimits } from '../lib/limits';
   import type { SourceFile } from '../lib/types';
+  import { getDemo, type DemoId } from '../lib/demo';
 
   let reading = $state(false);
   let error = $state('');
@@ -95,6 +96,16 @@
     void runAnalysis();
   }
 
+  /** Replaces whatever is in the boxes with a bundled demo project and loads it (works offline). */
+  async function tryDemo(id: DemoId) {
+    const d = getDemo(id);
+    app.pasteText = ''; app.pasteName = ''; app.pasteLang = 'auto'; app.testsText = '';
+    app.pending = d.files; app.pendingSkipped = [];
+    app.diffText = d.diff; app.specText = d.spec;
+    await load();
+    if (!error) app.notice = `Loaded the ${d.label} demo: ${d.files.length} files, with tests, a spec and a diff. Open Tests and press Run, then try the Queue.`;
+  }
+
   const fmt = (n: number) => n.toLocaleString('en-US');
 </script>
 
@@ -144,6 +155,15 @@
 
   </div>
   <div class="col">
+    <div class="card" data-testid="demo">
+      <h2>New here? Try a demo</h2>
+      <p class="muted small">A small shop project with deliberate problems, tests (one of them fails), a spec and a diff. It's built into the app, so it works offline. It replaces anything in the boxes.</p>
+      <div class="demo-btns">
+        <button class="btn" onclick={() => tryDemo('python')} data-testid="demo-python">Python demo</button>
+        <button class="btn" onclick={() => tryDemo('javascript')} data-testid="demo-javascript">JavaScript demo</button>
+      </div>
+    </div>
+
     <div class="card">
       <h2>Upload files or a .zip</h2>
     <p class="muted small">Or drag files, a whole folder, or a .zip onto this page.</p>
@@ -229,6 +249,7 @@
   @media (min-width: 560px) { .grid2 { grid-template-columns: 2fr 1fr; } }
   .small { font-size: 0.9rem; }
   .tag { font-size: 0.8rem; border: 1px dashed var(--muted); border-radius: 6px; padding: 0 6px; margin-left: 4px; }
+  .demo-btns { display: flex; flex-wrap: wrap; gap: 10px; }
   .upload { display: inline-flex; align-items: center; margin: 0; }
   .files { list-style: none; padding: 0; margin: 12px 0 0; }
   .files li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 8px 0; border-top: 1px solid var(--border); }

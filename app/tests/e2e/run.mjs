@@ -1,4 +1,4 @@
-// Lynceus end-to-end checks (Phases 1-5) against the production build.
+// Lynceus end-to-end checks (Phases 1-6) against the production build.
 // Usage: npm run build && npm run e2e      (needs Playwright + Chromium installed)
 import { createRequire } from 'module';
 import http from 'http';
@@ -603,6 +603,52 @@ try {
     await p.close();
   }
 
+  // ---- Phase 6: bundled demos. Run their tests, then compare the Queue with the hand-computed top 5 (docs/PHASE6_REPORT.md).
+  const HAND_TOP5 = {
+    javascript: [['applyDiscounts', 52], ['shippingCost', 33], ['exportCartCsv', 32], ['sendReceipt', 23], ['refundOrder', 20]],
+    python: [['allocate_orders', 50], ['export_stock_report', 39], ['load_config', 36], ['reserve', 28], ['order_value', 23]],
+  };
+  for (const id of ['javascript', 'python']) {
+    const p = await ctx.newPage();
+    await p.setViewportSize({ width: 1280, height: 900 });
+    await p.goto(APP);
+    await p.getByTestId(`demo-${id}`).click();
+    const loaded = await p.getByTestId('loaded').innerText();
+    check(`demo (${id}): loads files, tests, a diff and a spec`, /1 test file/.test(loaded) && /diff supplied/.test(loaded) && /spec [56] bullet/.test(loaded), loaded);
+    const nav = p.locator('nav.inline');
+    if (id === 'python') {
+      await nav.getByRole('button', { name: 'Code' }).click();
+      const consent = p.getByRole('button', { name: 'Download Python support' });
+      await Promise.race([consent.waitFor({ timeout: 60000 }).then(() => consent.click()).catch(() => {}), p.locator('[data-line="2"]').waitFor({ timeout: 60000 })]);
+      await p.locator('[data-line="2"]').waitFor({ timeout: 120000 });
+    }
+    await nav.getByRole('button', { name: 'Tests' }).click();
+    await p.getByRole('button', { name: /^Run tests/ }).click();
+    await p.getByTestId('test-summary').waitFor({ timeout: 180000 });
+    const outs = await p.getByTestId('result').evaluateAll((els) => els.map((e) => e.getAttribute('data-outcome')));
+    const want = id === 'python' ? 6 : 7;
+    check(`demo (${id}): ${want} tests pass and 1 fails`, outs.filter((o) => o === 'passed').length === want && outs.filter((o) => o === 'failed').length === 1, outs.join(','));
+    await nav.getByRole('button', { name: 'Queue' }).click();
+    await p.getByTestId('queue-item').first().waitFor();
+    const got = [];
+    for (const li of (await p.getByTestId('queue-item').all()).slice(0, 5)) got.push([await li.getAttribute('data-fn'), Number((await li.getByTestId('score').innerText()).match(/\d+/)[0])]);
+    check(`demo (${id}): Queue top 5 matches the hand calculation (acceptance #5, #6)`, JSON.stringify(got) === JSON.stringify(HAND_TOP5[id]), JSON.stringify(got));
+    if (id === 'javascript') await p.screenshot({ path: path.join(ROOT, '..', '..', 'docs', 'phase6-demo-queue.png') });
+    await nav.getByRole('button', { name: 'Code' }).click();
+    const file0 = id === 'python' ? 'inventory.py' : 'cart.js';
+    if (await p.getByTestId('file-select').count()) await p.getByTestId('file-select').selectOption({ label: file0 }).catch(() => {});
+    const codeTxt = await p.locator('main').innerText();
+    check(`demo (${id}): fake secret is masked in the code view`, !codeTxt.includes(id === 'python' ? 'demo-pass' : 'demo_key_not_real_0000'));
+    await nav.getByRole('button', { name: 'Report' }).click();
+    await p.getByTestId('report').waitFor();
+    const rep = await p.getByTestId('report').innerText();
+    const wantFindings = id === 'python' ? ['Possible hardcoded secret', 'Broad or empty catch', 'Mutable default argument', 'Placeholder body', 'TODO'] : ['Possible hardcoded secret', 'Broad or empty catch', '== instead of ===', 'Unused function', 'TODO'];
+    const missing = wantFindings.filter((w) => !rep.includes(w));
+    check(`demo (${id}): report lists the planted problems`, missing.length === 0, 'missing: ' + missing.join(', '));
+    if (id === 'python') await p.screenshot({ path: path.join(ROOT, '..', '..', 'docs', 'phase6-demo-report.png') });
+    await p.close();
+  }
+
   // ---- phone width, both themes: no horizontal scroll
   for (const theme of ['light', 'dark']) {
     const p = await ctx.newPage();
@@ -646,6 +692,18 @@ try {
     await p.getByTestId('test-summary').waitFor({ timeout: 120000 }).catch(() => {});
     const txt = await p.locator('main').innerText();
     check('Python tests run offline after first use', /1 passed/.test(txt) && /1 failed/.test(txt), txt.slice(0, 300));
+    await p.close();
+  }
+  // The demo is bundled, so it loads and its JS tests run with no network at all
+  {
+    const p = await ctx.newPage();
+    await p.goto(APP);
+    await p.getByTestId('demo-javascript').click();
+    await p.locator('nav.inline').getByRole('button', { name: 'Tests' }).click();
+    await p.getByRole('button', { name: /^Run tests/ }).click();
+    await p.getByTestId('test-summary').waitFor({ timeout: 120000 }).catch(() => {});
+    const txt = await p.getByTestId('test-summary').innerText().catch(() => '');
+    check('demo loads and its tests run offline', /7 passed/.test(txt) && /1 failed/.test(txt), txt);
     await p.close();
   }
   await ctx.setOffline(false);
