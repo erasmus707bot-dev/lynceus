@@ -33,6 +33,8 @@ jobs:
           cache-dependency-path: app/package-lock.json
       # npm 10.9 crashes on an optional Vitest peer without --legacy-peer-deps (see app/README.md).
       - run: npm ci --legacy-peer-deps
+      # Copies Pyodide and downloads the sha256-checked wheels; the Python runner unit tests need them.
+      - run: npm run vendor
       - run: npm test
       - run: npm run check
       # prebuild runs scripts/vendor-pyodide.mjs and scripts/vendor-wheels.mjs (sha256-checked).
