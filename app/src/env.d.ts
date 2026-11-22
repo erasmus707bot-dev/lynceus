@@ -12,3 +12,4 @@ declare module 'istanbul-lib-instrument' {
 declare module '@babel/core' {
   export function transformSync(code: string, opts: Record<string, unknown>): { code?: string | null } | null;
 }
+declare module '@babel/traverse' { const traverse: unknown; export default traverse; }

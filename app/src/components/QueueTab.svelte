@@ -1,5 +1,6 @@
 <script lang="ts">
   import { app, openFunction, runAnalysis } from '../lib/session.svelte';
+  import ReviewMark from './ReviewMark.svelte';
   import { review, band } from '../lib/review.svelte';
   import RiskBreakdown from './RiskBreakdown.svelte';
   import WeightsPanel from './WeightsPanel.svelte';
@@ -24,9 +25,10 @@
       </button>
       <div class="name">
         <button class="link" onclick={() => openFunction(r.path, r.fn.span.line, r.id)}>{r.fn.qualname}()</button>
-        <span class="where">{r.path}:{r.fn.span.line}{r.noTestEvidence ? ' · no test evidence' : ''}{r.changed ? ' · changed' : ''}{review.scaffoldById.has(r.id) ? ' · possible scaffolding' : ''}</span>
+        <span class="where">{r.path}:{r.fn.span.line}{r.noTestEvidence ? ' · no test evidence' : ''}{r.changed ? ' · changed' : ''}{review.scaffoldById.has(r.id) ? ' · possible scaffolding' : ''}{review.checks.byFn.get(r.id)?.length ? ` · ⚠ ${review.checks.byFn.get(r.id)!.length} finding${review.checks.byFn.get(r.id)!.length === 1 ? '' : 's'}` : ''}</span>
       </div>
     </div>
+    <ReviewMark id={r.id} name={r.fn.qualname} />
     {#if app.openBreakdown === r.id}<RiskBreakdown risk={r} />{/if}
   </li>
 {/snippet}
@@ -40,6 +42,10 @@
   {:else if !review.risks.length}
     <p class="callout beige">No functions found in the loaded code, so there is nothing to rank.</p>
   {:else}
+    <div class="progress-row" data-testid="review-progress">
+      <strong>{review.progress.pct}%</strong> of {review.progress.weighted ? 'risk-weighted code' : 'functions'} reviewed ({review.progress.done} of {review.progress.total} functions)
+      <progress max="100" value={review.progress.pct} aria-hidden="true"></progress>
+    </div>
     <p class="small muted">The riskiest functions by a 0–100 score. Tap a score to see how it was worked out.{review.testPaths.size ? ' Functions in test files are left out.' : ''}</p>
     {#if anyNoEvidence}<p class="callout beige small" data-testid="no-evidence">No test evidence{review.coverage ? ' for some files' : ''}: the 20% coverage weight is shared out over the other factors. Run the tests on the Tests tab to include it.</p>{/if}
     {#if review.diff?.problems.length}
@@ -76,6 +82,8 @@
   .name { display: flex; flex-direction: column; min-width: 0; }
   .link { background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; font: inherit; font-weight: 600; text-align: left; cursor: pointer; overflow-wrap: anywhere; min-height: 32px; }
   .where { color: var(--muted); font-size: 0.85rem; overflow-wrap: anywhere; }
+  .progress-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; margin: 4px 0 8px; }
+  .progress-row progress { flex: 1 1 160px; height: 12px; accent-color: var(--ok); }
   .only { display: flex; align-items: center; gap: 8px; min-height: 44px; }
   .only input { width: 22px; height: 22px; }
   .callout ul { margin: 4px 0 0; padding-left: 1.2em; }

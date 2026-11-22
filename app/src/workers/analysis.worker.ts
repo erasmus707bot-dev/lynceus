@@ -44,7 +44,15 @@ self.onmessage = async (e: MessageEvent<Req>) => {
           const fix = (s: string) => s.replace(/^\d+:/, prefix + ':');
           fa.statements.forEach((s) => { s.id = fix(s.id); if (s.fn) s.fn = fix(s.fn); });
           fa.blocks.forEach((b) => (b.id = fix(b.id)));
-          fa.functions.forEach((f) => (f.id = fix(f.id)));
+          fa.functions.forEach((f) => {
+            f.id = fix(f.id);
+            // call targets too (this was missing in Phase 4, so Python callers/callees never linked up)
+            f.callSites?.forEach((c) => { if (c.target) c.target = fix(c.target); });
+          });
+          fa.moduleCalls?.forEach((c) => { if (c.target) c.target = fix(c.target); });
+          fa.bindings?.forEach((b) => { b.id = fix(b.id); if (b.fn) b.fn = fix(b.fn); if (b.fnTarget) b.fnTarget = fix(b.fnTarget); });
+          fa.findings?.forEach((f) => { f.id = fix(f.id); if (f.fn) f.fn = fix(f.fn); });
+          fa.dupWindows?.forEach((w) => { if (w.fn) w.fn = fix(w.fn); });
         }
         out.push(...res);
       }

@@ -21,4 +21,6 @@ export interface Workspace {
   loadedAt: number;
   /** Spec bullet ↔ function/test links Scott made or confirmed (Phase 4, Intent pass). Saved only with the session. */
   specLinks?: { item: string; kind: 'function' | 'test'; ref: string; how: 'manual' | 'confirmed suggestion' }[];
+  /** Phase 5 review progress, by function id. Saved only when "Remember" is on, like everything on the workspace. */
+  reviews?: Record<string, { done: boolean; note: string }>;
 }

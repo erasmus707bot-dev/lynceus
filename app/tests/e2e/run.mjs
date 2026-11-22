@@ -1,4 +1,4 @@
-// Lynceus end-to-end checks (Phases 1-4) against the production build.
+// Lynceus end-to-end checks (Phases 1-5) against the production build.
 // Usage: npm run build && npm run e2e      (needs Playwright + Chromium installed)
 import { createRequire } from 'module';
 import http from 'http';
@@ -464,6 +464,142 @@ try {
     check('phone: Queue, Shape and Flow have no horizontal scroll', o1 <= 0 && o2 <= 0 && o3 <= 0, `${o1}/${o2}/${o3}px`);
     await p.getByTestId('pass-shape').click();
     await p.screenshot({ path: path.join(ROOT, '..', 'tests', 'e2e', 'phone-shape.png'), fullPage: true });
+    await p.close();
+  }
+
+  // ================= Phase 5: findings, masked secrets, lens, review progress, report =================
+  const KEY5 = 'sk_live_' + 'Zx9Yw8Vu7Ts6Rq5Po4Nm';
+  const PAY = [
+    "import { readFile } from './util.js';",          // 1
+    "import { unusedImp } from './util.js';",         // 2
+    `const STRIPE = "${KEY5}";`,                      // 3
+    "",                                               // 4
+    "export function total(items) {",                 // 5
+    "  let sum = 0;",                                 // 6
+    "  for (const it of items) {",                    // 7
+    "    sum += it.n;",                               // 8
+    "  }",                                            // 9
+    "  return sum;",                                  // 10
+    "}",                                              // 11
+    "",                                               // 12
+    "export function count(items) {",                 // 13
+    "  let sum = 0;",                                 // 14
+    "  const extra = 1;",                             // 15
+    "  try { readFile(STRIPE); } catch (e) {}",       // 16
+    "  if (items == 0) return 0;",                    // 17
+    "  return items.length + sum;",                   // 18
+    "}",                                              // 19
+    "// TODO: refunds",                               // 20
+    "export function refund() {}",                    // 21
+    "",
+  ].join('\n');
+  const UTIL = "export function readFile(x) { return x; }\nexport function unusedImp() { return 1; }\n";
+  async function readDownload(p, testid) {
+    const [dl] = await Promise.all([p.waitForEvent('download'), p.getByTestId(testid).click()]);
+    return fs.readFileSync(await dl.path(), 'utf8');
+  }
+  {
+    const p = await ctx.newPage();
+    await p.goto(APP);
+    await p.getByTestId('file-input').setInputFiles([file('src/pay.js', PAY), file('src/util.js', UTIL)]);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    const nav = p.locator('nav.inline');
+    await nav.getByRole('button', { name: 'Code' }).click();
+    await p.locator('[data-line="3"]').waitFor({ timeout: 30000 });
+    const marks = [];
+    for (const n of [2, 3, 15, 16, 17, 20, 21]) if ((await p.locator(`[data-line="${n}"] [data-testid="finding-mark"]`).count()) === 1) marks.push(n);
+    check('findings: ⚠ marks on unused import, secret, unused variable, empty catch, ==, TODO and empty body', marks.length === 7, marks.join(','));
+    check('secrets: masked in the code view (the key is nowhere on the page)', !(await p.locator('main').innerText()).includes(KEY5) && /sk_l•+/.test(await p.locator('[data-line="3"] [data-testid="secret"]').innerText()));
+    await p.locator('[data-line="3"] [data-testid="reveal"]').click();
+    const shown = (await p.locator('[data-line="3"]').innerText()).includes(KEY5);
+    await p.locator('[data-line="3"] [data-testid="reveal"]').click();
+    check('secrets: "show" reveals that one string, "hide" masks it again', shown && !(await p.locator('[data-line="3"]').innerText()).includes(KEY5));
+    await p.locator('[data-line="16"] .ln').click();
+    const lf = await p.locator('.right-pane').getByTestId('line-findings').innerText();
+    check('tap a flagged line: finding with rule, evidence and certainty', /Broad or empty catch[\s\S]*catch\.empty[\s\S]*certain/.test(lf), lf);
+    await p.keyboard.press('Escape');
+
+    // lens: variable
+    await p.getByTestId('lens-toggle').click();
+    await p.locator('[data-line="6"] .tok', { hasText: 'sum' }).click();
+    const letter = async (n) => ((await p.locator(`[data-line="${n}"] .lens-letter`).count()) ? (await p.locator(`[data-line="${n}"] .lens-letter`).innerText()).trim() : '');
+    const bar = await p.getByTestId('lens-bar').innerText();
+    check('lens: tapping a variable marks its reads and writes (W / RW / R)', (await letter(6)) === 'W' && (await letter(8)) === 'RW' && (await letter(10)) === 'R', `${await letter(6)} ${await letter(8)} ${await letter(10)}`);
+    check('lens: a same-named variable in another function is not lit (scope-aware)', (await letter(14)) === '' && (await letter(18)) === '' && (await p.locator('[data-line="14"]').getAttribute('class')).includes('lens-dim'));
+    check('lens: the bar says what it found and how sure it is', /sum[\s\S]*1 read[\s\S]*certain/.test(bar), bar);
+    // lens: function
+    await p.locator('[data-line="13"] .ln').click();
+    const fbar = await p.getByTestId('lens-bar').innerText();
+    check('lens: tapping a function shows its callers and callees, the rest dimmed', /count\(\)[\s\S]*Everything else in this file is dimmed/.test(fbar) && /readFile\(\) \(src\/util\.js\)/.test(fbar) && (await p.locator('[data-line="6"]').getAttribute('class')).includes('lens-dim') && !(await p.locator('[data-line="16"]').getAttribute('class')).includes('lens-dim'), fbar);
+    await p.keyboard.press('Escape');
+    check('lens: Esc clears it', /Lens on: tap a name/.test(await p.getByTestId('lens-bar').innerText()) && (await p.locator('.lens-dim').count()) === 0);
+    await p.getByTestId('lens-toggle').click();
+
+    // review progress
+    await nav.getByRole('button', { name: 'Queue' }).click();
+    const first = p.getByTestId('queue-item').first();
+    await first.getByTestId('reviewed').check();
+    await first.getByRole('button', { name: 'Add note' }).click();
+    await first.getByTestId('review-note').fill('checked the catch');
+    await first.getByTestId('review-note').press('Enter');
+    await first.getByTestId('review-note').blur();
+    const prog = await p.getByTestId('review-progress').innerText();
+    check('review progress: ticking a function raises the risk-weighted % reviewed', /^[1-9]\d*%/.test(prog.trim()) && /1 of \d+ functions/.test(prog), prog);
+
+    // report
+    await nav.getByRole('button', { name: 'Report' }).click();
+    await p.getByTestId('report').waitFor();
+    const rep = await p.getByTestId('report').innerText();
+    check('report tab: findings by check with rule and certainty, progress, notes', /Possible hardcoded secret/.test(rep) && /Broad or empty catch/.test(rep) && /secret\.stripe-key/.test(rep) && /checked the catch/.test(rep) && !rep.includes(KEY5), rep.slice(0, 300));
+    const md1 = await readDownload(p, 'download-md');
+    check('#12 Markdown export: no code by default and the secret is masked', !md1.includes(KEY5) && !md1.includes('readFile(STRIPE)') && !md1.includes('let sum = 0') && /sk_l••••/.test(md1) && /no source code in this report/.test(md1), md1.slice(0, 300));
+    await p.getByTestId('excerpts').check();
+    const md2 = await readDownload(p, 'download-md');
+    check('#12 with "Include code excerpts": code appears, the secret is still masked', md2.includes('try { readFile(STRIPE); } catch (e) {}') && !md2.includes(KEY5) && md2.includes('const STRIPE = "sk_l'), md2.slice(0, 300));
+    await p.emulateMedia({ media: 'print' });
+    const printOk = await p.evaluate(() => getComputedStyle(document.querySelector('header.nav')).display === 'none' && getComputedStyle(document.querySelector('.actions')).display === 'none' && !!document.querySelector('[data-testid="report"]').offsetHeight);
+    await p.screenshot({ path: path.join(ROOT, '..', '..', 'docs', 'phase5-print.png'), fullPage: true });
+    await p.emulateMedia({ media: 'screen' });
+    check('print / Save as PDF: only the report prints (nav and buttons hidden)', printOk);
+    await p.close();
+  }
+  // Python: findings, masking and lens
+  {
+    const p = await ctx.newPage();
+    await p.goto(APP);
+    await p.getByTestId('file-input').setInputFiles([file('cfg.py', `import os\nTOKEN = "${KEY5}"\n\ndef load(path, cache={}):\n    data = None\n    try:\n        data = open(path).read()\n    except:\n        pass\n    return data\n\ndef other():\n    data = 1\n    return data\n`)]);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    await p.locator('nav.inline').getByRole('button', { name: 'Code' }).click();
+    const consent = p.getByRole('button', { name: 'Download Python support' });
+    await Promise.race([consent.waitFor({ timeout: 60000 }).then(() => consent.click()).catch(() => {}), p.locator('[data-line="2"]').waitFor({ timeout: 60000 })]);
+    await p.locator('[data-line="2"]').waitFor({ timeout: 60000 });
+    const pm = [];
+    for (const n of [1, 2, 4, 8]) if ((await p.locator(`[data-line="${n}"] [data-testid="finding-mark"]`).count()) === 1) pm.push(n);
+    check('Python findings: unused import, secret, mutable default, bare except', pm.length === 4, pm.join(','));
+    check('Python secret masked in the code view', !(await p.locator('main').innerText()).includes(KEY5));
+    await p.getByTestId('lens-toggle').click();
+    await p.locator('[data-line="5"] .tok', { hasText: 'data' }).click();
+    const lit = await p.locator('.row.lens-hit').evaluateAll((els) => els.map((e) => e.getAttribute('data-line')).join(','));
+    check('Python lens: only load()\'s `data` lights up, not other()\'s', lit === '5,7,10', lit);
+    await p.close();
+  }
+  // phone: Report and lens fit
+  {
+    const p = await ctx.newPage();
+    await p.setViewportSize({ width: 360, height: 740 });
+    await p.goto(APP);
+    await p.getByTestId('file-input').setInputFiles([file('src/pay.js', PAY), file('src/util.js', UTIL)]);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    const nav = p.locator('nav.tabbar:not(.inline)');
+    await nav.getByRole('button', { name: 'Report' }).click();
+    await p.getByTestId('report').waitFor({ timeout: 30000 });
+    const o1 = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    await p.screenshot({ path: path.join(ROOT, '..', 'tests', 'e2e', 'phone-report.png'), fullPage: true });
+    await nav.getByRole('button', { name: 'Code' }).click();
+    await p.getByTestId('lens-toggle').click();
+    await p.locator('[data-line="6"] .tok', { hasText: 'sum' }).click();
+    const o2 = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    check('phone: Report and the lens have no horizontal scroll', o1 <= 0 && o2 <= 0, `${o1}/${o2}px`);
     await p.close();
   }
 

@@ -46,7 +46,24 @@ export const app = $state({
   openBreakdown: null as string | null,
   queueChangedOnly: false,
   specItem: null as string | null,
+  // Phase 5: lens and masking (memory only)
+  lens: false,
+  lensBinding: null as string | null,
+  lensFn: null as string | null,
+  revealed: {} as Record<string, boolean>,   // "path:line:col" of a secret the reviewer chose to show
+  reportExcerpts: false,
 });
+
+/** Marks a function reviewed (or not) and/or sets its one-line note. */
+export function setReview(fnId: string, patch: Partial<{ done: boolean; note: string }>): void {
+  const ws = app.workspace;
+  if (!ws) return;
+  const cur = ws.reviews?.[fnId] ?? { done: false, note: '' };
+  ws.reviews = { ...(ws.reviews ?? {}), [fnId]: { ...cur, ...patch, note: (patch.note ?? cur.note).slice(0, 200) } };
+  void persist();
+}
+
+export function clearLens(): void { app.lensBinding = null; app.lensFn = null; }
 
 /** Opens a function in the Code tab at its first line. */
 export function openFunction(path: string, line: number, fnId?: string): void {
@@ -141,6 +158,7 @@ function resetAnalysis(): void {
   stopWorker();
   resetTests();
   app.codePass = 'lines'; app.selectedFn = null; app.openBreakdown = null; app.queueChangedOnly = false; app.specItem = null;
+  app.lens = false; app.lensBinding = null; app.lensFn = null; app.revealed = {}; app.reportExcerpts = false;
   app.analysis = null; app.analysisStatus = 'idle'; app.analysisMsg = ''; app.pythonSkipped = false;
   app.codeFile = null; app.selectedLine = null; app.collapsed = {};
 }

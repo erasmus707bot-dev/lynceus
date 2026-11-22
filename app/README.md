@@ -45,3 +45,11 @@ Needs Node 20.19+ or 22.12+ (Vite 8).
 - **Diff:** paste a unified diff on the Input tab. Hunks must match the loaded code exactly; any that don't are listed under **Diff problems** and not used.
 - **Code tab passes:** Lines (roles), Shape (outline and call graph), Flow (what the tests ran, plus unreachable code), Intent (spec bullets linked to functions and tests).
 - Spec links are kept on the workspace, so they are saved only when **Remember** is on.
+
+## Phase 5 notes (lens, checks, progress, report)
+
+- **New direct dependency:** `@babel/traverse` 7.29.13 (it was already installed under @babel/core, at the version the overrides pin). Run `npm ci --legacy-peer-deps` after pulling.
+- **Extra checks** run in the analysis worker: file-local ones in `src/analysis/js/extras.ts` and in `analyze.py` (`PyExtras`); the cross-file ones (unused functions, duplicates across files) in `src/review/checks.ts`. Secret patterns live in `src/analysis/secrets.ts`, with a Python copy in `analyze.py` (keep the two the same).
+- **Lens:** a "Lens" button on the Lines pass. Scopes come from Babel's scope tracker (JS) and from Lynceus's own LEGB scope pass (Python).
+- **Report tab:** Markdown download, plus Print / Save as PDF using a print stylesheet. No source code unless "Include code excerpts" is ticked; possible secrets are always masked.
+- Review ticks and notes live on the workspace, so they are saved only when **Remember** is on.

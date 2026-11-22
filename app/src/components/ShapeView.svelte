@@ -2,6 +2,7 @@
   import { app, openFunction } from '../lib/session.svelte';
   import { review, band } from '../lib/review.svelte';
   import type { FunctionInfo } from '../analysis/model';
+  import ReviewMark from './ReviewMark.svelte';
 
   // files → classes → functions, functions in source order
   const outline = $derived((app.analysis?.files ?? []).map((fa) => {
@@ -36,6 +37,7 @@
                   <span class="nm">{fn.name}()</span>
                   <span class="ln">line {fn.span.line}</span>
                   {#if review.scaffoldById.has(fn.id)}<span class="tag">possible scaffolding</span>{/if}
+                  {#if review.reviews[fn.id]?.done}<span class="tag done">✓ reviewed</span>{/if}
                 </button>
               </li>
             {/each}
@@ -50,6 +52,7 @@
       <p class="small muted">{sel.path}:{sel.fn.span.line} · complexity {sel.fn.complexity ?? 1} · max depth {sel.fn.maxLevel}</p>
       {#if review.scaffoldById.has(sel.fn.id)}<p class="callout beige small"><strong>Possible scaffolding.</strong> {review.scaffoldById.get(sel.fn.id)!.reason}</p>{/if}
       <button class="btn" onclick={() => openFunction(sel.path, sel.fn.span.line, sel.fn.id)}>Read it in Lines</button>
+      {#if review.riskById.has(sel.fn.id)}<ReviewMark id={sel.fn.id} name={sel.fn.qualname} />{/if}
       <h3>Called by ({callers.length})</h3>
       {#if !callers.length}<p class="small muted">Nothing in the loaded code calls it{sel.fn.name.startsWith('test') ? ' (test functions are called by the test runner)' : ''}.</p>{/if}
       <ul class="calls" data-testid="callers">
@@ -88,6 +91,7 @@
   .risk .b { font-weight: 400; font-size: 0.75rem; }
   .risk.high { color: var(--bad); border-color: var(--bad); } .risk.medium { color: var(--r-unknown); border-color: var(--r-unknown); border-style: dashed; } .risk.low { color: var(--ok); border-color: var(--ok); border-style: dotted; }
   .tag { font-size: 0.8rem; border: 1px dashed var(--muted); border-radius: 6px; padding: 0 6px; }
+  .tag.done { border-style: solid; border-color: var(--ok); color: var(--ok); }
   .graph h2 { font-size: 1.1rem; margin-top: 0; overflow-wrap: anywhere; }
   .graph h3 { font-size: 1rem; margin: 12px 0 4px; }
   .calls li { padding: 4px 0; border-bottom: 1px dashed var(--border); overflow-wrap: anywhere; }

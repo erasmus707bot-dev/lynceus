@@ -66,6 +66,49 @@ export interface CallSite { name: string; line: number; target: string | null; k
 /** Code proven unreachable from the syntax tree (after return/raise/throw/break/continue, or under `if False`). */
 export interface Unreachable { line: number; endLine: number; reason: string }
 
+/** One read or write of a name. Columns are string indices into the line (UTF-16, like JS strings). */
+export interface Ref { line: number; col: number; endCol: number; access: 'decl' | 'read' | 'write' | 'readwrite' }
+
+/**
+ * A declared name and every place it is used, from scope analysis of the syntax tree (brief §6.6 lens).
+ * fn = innermost function it is declared in (null = module level); fnTarget = the function this name defines, if any.
+ */
+export interface Binding {
+  id: string;
+  name: string;
+  kind: 'variable' | 'param' | 'function' | 'class' | 'import';
+  fn: string | null;
+  fnTarget?: string;
+  exported?: boolean;
+  /** For imports: the loaded file it comes from (null = outside the upload) and the imported name. */
+  from?: { path: string | null; name: string };
+  refs: Ref[];
+  certainty: Certainty;
+  note?: string;       // why it is heuristic, when it is
+}
+
+export type CheckId = 'unused-function' | 'unused-variable' | 'unused-import' | 'duplicate' | 'unreachable' | 'broad-catch'
+  | 'mutable-default' | 'loose-equality' | 'secret' | 'todo' | 'placeholder';
+
+/** One extra static check result (brief §6.7). Every finding names its rule, evidence and certainty. */
+export interface Finding {
+  id: string;
+  check: CheckId;
+  rule: string;
+  line: number;
+  endLine: number;
+  fn: string | null;   // enclosing function id, if any
+  detail: string;      // what exactly matched (secrets are never included in clear text)
+  certainty: Certainty;
+  source: 'syntax tree' | 'comments' | 'syntax tree + call graph';
+}
+
+/** Where a possible secret sits, so the code view and exports can mask it. */
+export interface SecretSpan { line: number; col: number; endLine: number; endCol: number }
+
+/** Normalized syntax-tree hash of a run of statements (names and constants ignored), for duplicate detection. */
+export interface DupWindow { hash: string; line: number; endLine: number; fn: string | null }
+
 export interface FileAnalysis {
   path: string;
   lang: 'python' | 'javascript';
@@ -76,6 +119,10 @@ export interface FileAnalysis {
   functions: FunctionInfo[];
   unreachable?: Unreachable[];
   moduleCalls?: CallSite[]; // calls made at module level (not inside any function)
+  bindings?: Binding[];
+  findings?: Finding[];
+  secrets?: SecretSpan[];
+  dupWindows?: DupWindow[];
 }
 
 export interface Analysis { files: FileAnalysis[]; ms: number }

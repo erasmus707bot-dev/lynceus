@@ -2,17 +2,17 @@
   import Nav from './components/Nav.svelte';
   import TabBar from './components/TabBar.svelte';
   import InputScreen from './components/InputScreen.svelte';
-  import Placeholder from './components/Placeholder.svelte';
   import CodeTab from './components/CodeTab.svelte';
   import TestsTab from './components/TestsTab.svelte';
   import QueueTab from './components/QueueTab.svelte';
+  import ReportTab from './components/ReportTab.svelte';
   import { app } from './lib/session.svelte';
 </script>
 
 <Nav />
 <main id="main" tabindex="-1">
   {#if app.notice}
-    <div class="callout sage notice" role="status">
+    <div class="callout sage notice no-print" role="status">
       <span>{app.notice}</span>
       <button class="btn" onclick={() => (app.notice = '')} aria-label="Dismiss message">✕</button>
     </div>
@@ -26,7 +26,7 @@
   {:else if app.tab === 'tests'}
     <TestsTab />
   {:else}
-    <Placeholder title="Report" phase={5} what="review progress and Markdown/PDF export." />
+    <ReportTab />
   {/if}
 </main>
 <TabBar />

@@ -6,6 +6,7 @@ import { scoreFunctions } from '../review/risk';
 import { buildGraph } from '../review/callgraph';
 import { parseSpec, suggest } from '../review/spec';
 import { scaffolding } from '../review/scaffolding';
+import { runChecks } from '../review/checks';
 
 class Review {
   diff = $derived(app.workspace ? applyDiff(app.workspace.diff, app.workspace.files) : null);
@@ -25,6 +26,16 @@ class Review {
     ...(app.testRun?.tests ?? []).filter((t) => !t.id.endsWith('::(load)')).map((t) => ({ kind: 'test' as const, ref: t.id, label: t.name, where: t.file })),
   ]);
   suggestions = $derived(suggest(this.spec, this.targets, this.links));
+  checks = $derived(runChecks(app.analysis, this.testPaths, this.graph));
+  reviews = $derived(app.workspace?.reviews ?? {});
+  /** Share of risk-weighted code reviewed: sum of reviewed scores / sum of all scores (by count if every score is 0). */
+  progress = $derived.by(() => {
+    const total = this.risks.reduce((s, r) => s + r.score, 0);
+    const done = this.risks.filter((r) => this.reviews[r.id]?.done);
+    const doneScore = done.reduce((s, r) => s + r.score, 0);
+    const pct = !this.risks.length ? 0 : total > 0 ? Math.round((doneScore / total) * 100) : Math.round((done.length / this.risks.length) * 100);
+    return { pct, done: done.length, total: this.risks.length, weighted: total > 0 };
+  });
 }
 
 export const review = new Review();

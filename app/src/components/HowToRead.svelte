@@ -39,6 +39,13 @@
   </ul>
   <h3>Risk score (Queue tab)</h3>
   <p>0–100, from complexity, nesting, side-effect lines, untested lines and whether the diff touched it. <strong>High</strong> is 67 or more, <strong>medium</strong> 34–66, <strong>low</strong> below 34. Tap a score to see every factor and its points. Missing evidence (no tests, no diff) is said out loud, and its weight moves to the other factors.</p>
+  <h3>Findings <span class="warnm">⚠</span></h3>
+  <p>A <span class="warnm">⚠</span> in the gutter marks where a finding starts: unused code, duplicated blocks, unreachable code, broad or empty catches, mutable default arguments, <code>==</code> in JavaScript, possible secrets, TODO/FIXME and placeholder bodies. Tap the line for the rule and whether it is certain or heuristic. All of them are listed on the Report tab.</p>
+  <p><strong>Possible secrets are masked</strong> as <code>sk_l••••</code>. Tap <strong>show</strong> to see one string; it stays out of every export.</p>
+  <h3>Lens</h3>
+  <p>Turn on <strong>Lens</strong> above the code, then tap a name: every read (<strong class="lr">R</strong>) and write (<strong class="lw">W</strong>) of that exact variable lights up, using the language's scope rules, so a same-named variable elsewhere stays dark. Tap a function's first line to keep only it, its callers and its callees bright. <kbd>Esc</kbd> clears it.</p>
+  <h3>Reviewed</h3>
+  <p>Tick <strong>Reviewed</strong> on a function in the Queue or Shape view and add a one-line note if you like. The Queue shows the share of risk-weighted code you have reviewed.</p>
   <h3>Tapping a line</h3>
   <p>Shows the exact rule that fired, what it matched, and whether it is certain or heuristic. Press <kbd>Esc</kbd> or tap the line again to clear.</p>
 </section>
@@ -55,5 +62,7 @@
   .r-unknown { color: var(--r-unknown); background: var(--r-unknown-bg); }
   .flag { color: var(--guide-warn); font-weight: 700; }
   .warnline { border-left: 3px solid var(--guide-warn); padding-left: 4px; }
+  .warnm { color: var(--bad); font-weight: 700; }
+  .lr { color: var(--lens-read); } .lw { color: var(--lens-write); }
   kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: 0.9em; }
 </style>

@@ -8,6 +8,7 @@ import { primary } from '../model';
 import { matchAny } from '../rules';
 import type { SourceFile } from '../../lib/types';
 import type { LanguageAdapter } from '../adapter';
+import { jsExtras } from './extras';
 
 type Node = T.Node;
 type Rules = typeof RULES;
@@ -133,6 +134,7 @@ export class JsAnalyzer {
   private pending: PendingCall[] = [];
   private ctxs: FileCtx[] = [];
   private paths = new Set<string>();
+  private nodeFn = new Map<Node, string>();
 
   constructor(rules: Rules = RULES) { this.rules = rules; }
 
@@ -161,6 +163,11 @@ export class JsAnalyzer {
       this.body(ctx, ast.program.body, scope, null, 0, null);
     }
     this.resolveLocalCalls();
+    // Pass 3: scope-aware bindings (lens) and the extra static checks.
+    for (const { ctx, ast } of parsed) if (ast) {
+      try { jsExtras({ ast, text: ctx.file.text, out: ctx.out, idx: ctx.idx, fnOfNode: this.nodeFn, imports: ctx.imports }); }
+      catch (e) { ctx.out.findings = []; ctx.out.bindings = []; console.warn('extra checks failed for', ctx.file.path, e); }
+    }
     return this.ctxs.map((c) => c.out);
   }
 
@@ -380,6 +387,7 @@ export class JsAnalyzer {
     const params = n.params.map((p) => (p.type === 'Identifier' ? p.name : p.type === 'AssignmentPattern' && p.left.type === 'Identifier' ? p.left.name : '…'));
     const info: FunctionInfo = { id, name, qualname: qual, span: span(stmtNode.type === 'VariableDeclaration' ? stmtNode : n), params, calls: [], maxLevel: 0, role: 'pure', complexity: this.complexity(n), callSites: [] };
     this.fns.set(id, info);
+    this.nodeFn.set(n, id);
     ctx.out.functions.push(info);
     if (stmtNode === n || stmtNode.type !== 'VariableDeclaration') {
       this.addStatement(ctx, n, 'FunctionDefinition', [{ role: 'pure', rule: 'define.function', detail: `defines function ${qual}(${params.join(', ')})`, certainty: 'certain', source: 'syntax tree' }], parentFn, n.body.loc!.start.line);

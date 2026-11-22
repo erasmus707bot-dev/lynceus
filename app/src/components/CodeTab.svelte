@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { app, runAnalysis } from '../lib/session.svelte';
+  import { app, runAnalysis, clearLens, openFunction } from '../lib/session.svelte';
+  import { review } from '../lib/review.svelte';
   import { ROLE_LETTER, ROLE_LABEL, ROLE_ORDER, type Role } from '../analysis/model';
   import CodeView from './CodeView.svelte';
   import EvidencePane from './EvidencePane.svelte';
@@ -19,8 +20,14 @@
     app.roleFilter = app.roleFilter.includes(r) ? app.roleFilter.filter((x) => x !== r) : [...app.roleFilter, r];
   }
   function onKey(e: KeyboardEvent) {
-    if (e.key === 'Escape') { app.selectedLine = null; app.showHelp = false; }
+    if (e.key === 'Escape') { app.selectedLine = null; app.showHelp = false; clearLens(); }
   }
+  const lensB = $derived(app.lens && app.lensBinding ? fa?.bindings?.find((b) => b.id === app.lensBinding) ?? null : null);
+  const lensF = $derived(app.lens && app.lensFn ? review.graph.byId.get(app.lensFn) ?? null : null);
+  const lensCallers = $derived(lensF ? review.graph.callers.get(lensF.fn.id) ?? [] : []);
+  const lensCallees = $derived(lensF ? (review.graph.callees.get(lensF.fn.id) ?? []) : []);
+  const countAccess = (k: string) => lensB?.refs.filter((r) => (k === 'write' ? r.access === 'write' || r.access === 'decl' : r.access === k)).length ?? 0;
+  const fnName = (id: string | null) => (id ? review.graph.byId.get(id)?.fn.qualname + '()' : 'module level');
   const counts = $derived.by(() => {
     const c: Record<string, number> = {};
     for (const s of fa?.statements ?? []) c[s.role] = (c[s.role] ?? 0) + 1;
@@ -66,6 +73,9 @@
       {#if app.codePass === 'lines' && app.testRun && Object.keys(app.testRun.coverage).length}
         <button class="btn" aria-pressed={app.showCoverage} onclick={() => (app.showCoverage = !app.showCoverage)} data-testid="coverage-toggle">{app.showCoverage ? 'Coverage: on' : 'Coverage: off'}</button>
       {/if}
+      {#if app.codePass === 'lines'}
+        <button class="btn" aria-pressed={app.lens} onclick={() => { app.lens = !app.lens; clearLens(); }} data-testid="lens-toggle">{app.lens ? 'Lens: on' : 'Lens: off'}</button>
+      {/if}
       <button class="btn" aria-pressed={app.wrap} onclick={() => (app.wrap = !app.wrap)}>{app.wrap ? 'Wrap: on' : 'Wrap: off'}</button>
       <button class="btn help-btn" onclick={() => { app.selectedLine = null; app.showHelp = !app.showHelp; }}>How to read this</button>
     </div>
@@ -75,6 +85,25 @@
     <p class="callout stop" role="alert">Couldn't parse {fa.path}: {fa.error?.message} (line {fa.error?.line}). The code is shown without markers.</p>
   {/if}
   {#if src && !fa}<p class="callout warn">{src.path} was not analyzed.</p>{/if}
+  {#if app.lens && app.codePass === 'lines'}
+    <div class="callout blue lensbar" role="status" data-testid="lens-bar">
+      {#if lensB}
+        <p><strong>{lensB.name}</strong> ({lensB.kind}, in {fnName(lensB.fn)}): {countAccess('read')} read{countAccess('read') === 1 ? '' : 's'}, {countAccess('write')} write{countAccess('write') === 1 ? '' : 's'}{countAccess('readwrite') ? `, ${countAccess('readwrite')} read-and-write` : ''}. <span class="tag {lensB.certainty}">{lensB.certainty}</span> <span class="small">from the syntax tree's scopes{lensB.note ? `: ${lensB.note}` : ''}</span></p>
+        <p class="small">Gutter: <strong class="lr">R</strong> read, <strong class="lw">W</strong> write or declaration, <strong class="lw">RW</strong> both (like <code>+=</code>). Same-named variables in other scopes are not lit.</p>
+      {/if}
+      {#if lensF}
+        <p><strong>{lensF.fn.qualname}()</strong>: {lensCallers.length} caller{lensCallers.length === 1 ? '' : 's'}, {lensCallees.length} call{lensCallees.length === 1 ? '' : 's'}. Everything else in this file is dimmed.</p>
+        {#if lensCallers.some((c) => c.path !== src?.path) || lensCallees.some((c) => c.target && review.graph.byId.get(c.target)?.path !== src?.path)}
+          <p class="small">In other files:
+            {#each lensCallers.filter((c) => c.path !== src?.path) as c, i (i)}<button class="link" onclick={() => openFunction(c.path, c.line)}>{c.from ? c.from.fn.qualname + '()' : 'module code'} ({c.path}:{c.line})</button> {/each}
+            {#each lensCallees.filter((c) => c.target && review.graph.byId.get(c.target)?.path !== src?.path) as c, i (i)}{@const t = review.graph.byId.get(c.target!)!}<button class="link" onclick={() => openFunction(t.path, t.fn.span.line)}>{t.fn.qualname}() ({t.path})</button> {/each}
+          </p>
+        {/if}
+      {/if}
+      {#if !lensB && !lensF}<p>Lens on: tap a name to light up every read and write of it in scope, or tap a function's first line to see its callers and callees. <kbd>Esc</kbd> clears.</p>{/if}
+      {#if lensB || lensF}<button class="btn" onclick={clearLens}>Clear lens</button>{/if}
+    </div>
+  {/if}
   {#if flowNoCov}
     <p class="callout beige" role="status" data-testid="flow-no-coverage">{app.testRun ? `The test run has no coverage for ${src?.path}` : 'No tests have run yet'}, so Flow only marks unreachable code here. Run tests on the Tests tab to see which lines the tests ran.</p>
   {:else if app.codePass === 'flow'}
@@ -107,6 +136,12 @@
   .chip.r-pure .l, .chip.r-pure[aria-pressed='true'] { color: var(--r-pure); } .chip.r-pure[aria-pressed='true'] { background: var(--r-pure-bg); }
   .chip.r-unknown .l, .chip.r-unknown[aria-pressed='true'] { color: var(--r-unknown); } .chip.r-unknown[aria-pressed='true'] { background: var(--r-unknown-bg); }
   .flow-key { margin: 0 0 10px; }
+  .lensbar p { margin: 0 0 6px; overflow-wrap: anywhere; }
+  .lensbar .small { font-size: 0.9rem; }
+  .lensbar .tag { font-size: 0.8rem; border-radius: 6px; padding: 1px 8px; border: 1.5px solid var(--muted); }
+  .lensbar .tag.heuristic { border-style: dashed; }
+  .lr { color: var(--lens-read); } .lw { color: var(--lens-write); }
+  .link { background: none; border: 0; padding: 0 4px 0 0; color: var(--accent); text-decoration: underline; font: inherit; cursor: pointer; min-height: 32px; overflow-wrap: anywhere; text-align: left; }
   .k { border-radius: 6px; padding: 0 6px; }
   .k.run { border-left: 3px solid var(--ok); }
   .k.miss { opacity: 0.6; border: 1px dashed var(--muted); }

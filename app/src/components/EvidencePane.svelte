@@ -3,6 +3,8 @@
   import { ROLE_LETTER, ROLE_LABEL, type FileAnalysis } from '../analysis/model';
   import HowToRead from './HowToRead.svelte';
   import { lineCoverage, MISS_LABEL } from '../sandbox/coverage';
+  import { review } from '../lib/review.svelte';
+  import { CHECK_LABEL } from '../review/checks';
 
   let { fa, onclose }: { fa: FileAnalysis | null; onclose?: () => void } = $props();
 
@@ -14,6 +16,7 @@
   const lc = $derived(line && app.codeFile ? lineCoverage(app.testRun?.coverage[app.codeFile], line) : null);
   const testName = (id: string) => app.testRun?.results[id]?.name ?? app.testRun?.tests.find((t) => t.id === id)?.name ?? id;
   const outcomeOf = (id: string) => app.testRun?.results[id]?.outcome ?? '';
+  const fnds = $derived(line && app.codeFile ? review.checks.all.filter((f) => f.path === app.codeFile && f.line <= line && line <= f.endLine) : []);
   const ur = $derived(fa && line ? (fa.unreachable ?? []).find((u) => u.line <= line && line <= u.endLine) ?? null : null);
   const level = $derived(enclosing.length ? Math.max(...enclosing.map((b) => b.level)) : 0);
 </script>
@@ -22,7 +25,21 @@
   {#if onclose}<button class="btn close" onclick={onclose} aria-label="Close panel">✕</button>{/if}
   {#if line && (fa || lc)}
     <h2>Line {line}</h2>
-    {#if ur}
+    {#if fnds.length}
+      <div class="stmt" data-testid="line-findings">
+        <h3>Findings</h3>
+        <ul class="evidence">
+          {#each fnds as f (f.id)}
+            <li>
+              <span class="badge sm warnb" class:dashed={f.certainty === 'heuristic'}>⚠</span>
+              <span><strong>{CHECK_LABEL[f.check]}</strong>: {f.detail}</span>
+              <span class="meta">rule <code>{f.rule}</code> · {f.certainty} · from the {f.source}{f.line !== f.endLine ? ` · lines ${f.line}–${f.endLine}` : ''}</span>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+    {#if ur && app.codePass === 'flow'}
       <div class="stmt" data-testid="line-unreachable">
         <h3>Unreachable</h3>
         <p class="small">{ur.line === ur.endLine ? `Line ${ur.line}` : `Lines ${ur.line}–${ur.endLine}`} {ur.reason}. <span class="tag certain">certain</span> <span class="meta">from the syntax tree</span></p>
@@ -101,6 +118,7 @@
   .r-unknown { color: var(--r-unknown); background: var(--r-unknown-bg); }
   code { font-size: 0.9em; }
   .meta { color: var(--muted); font-size: 0.85rem; }
+  .warnb { color: var(--bad); background: var(--surface); }
   .tests { list-style: none; padding: 0; margin: 4px 0 0; font-size: 0.95rem; }
   .tests li { margin-bottom: 4px; overflow-wrap: anywhere; }
   .oc { font-size: 0.75rem; border-radius: 6px; padding: 0 6px; border: 1px solid var(--border); margin-right: 4px; }
