@@ -1,0 +1,22 @@
+{
+  "_doc": "Lynceus JavaScript rules. Patterns: exact names, or 'obj.*' for any member. 'certain' = provable from the syntax tree or a JS built-in; 'heuristic' = name-based guess. Edit freely; unit tests cover every list.",
+  "io": {
+    "certain": ["console.*", "fetch", "alert", "prompt", "confirm", "setTimeout", "setInterval", "clearTimeout", "clearInterval", "queueMicrotask", "requestAnimationFrame", "Math.random", "Date.now", "Date", "performance.now", "crypto.getRandomValues", "crypto.randomUUID", "localStorage.*", "sessionStorage.*", "indexedDB.*", "document.*", "window.*", "navigator.*", "location.*", "history.*", "process.exit", "process.stdout.*", "process.stderr.*", "XMLHttpRequest", "WebSocket", "EventSource", "importScripts", "postMessage"],
+    "heuristic": ["fs.*", "fsPromises.*", "path.resolve", "child_process.*", "http.*", "https.*", "net.*", "axios", "axios.*", "got", "got.*", "superagent.*", "db.*", "pool.*", "client.query", "knex", "knex.*", "mongoose.*", "redis.*", "logger.*", "log.*"]
+  },
+  "io_reads": {
+    "certain": ["process.env", "process.argv", "document.cookie", "window.location", "location.href", "navigator.userAgent"]
+  },
+  "dom_write_props": ["innerHTML", "outerHTML", "textContent", "innerText", "value", "src", "href", "className", "title", "cookie", "hash", "search"],
+  "mutating_methods": {
+    "heuristic": ["push", "pop", "shift", "unshift", "splice", "sort", "reverse", "fill", "copyWithin", "set", "delete", "clear", "add", "assign", "defineProperty", "setAttribute", "appendChild", "removeChild", "append", "prepend", "remove", "replaceChildren", "addEventListener", "removeEventListener"]
+  },
+  "mutating_statics": {
+    "certain": ["Object.assign", "Object.defineProperty", "Object.defineProperties", "Object.setPrototypeOf", "Reflect.set", "Reflect.deleteProperty", "Reflect.defineProperty", "Array.prototype.push.apply"]
+  },
+  "pure": {
+    "certain": ["Math.abs", "Math.max", "Math.min", "Math.floor", "Math.ceil", "Math.round", "Math.trunc", "Math.sign", "Math.sqrt", "Math.cbrt", "Math.pow", "Math.exp", "Math.log", "Math.log2", "Math.log10", "Math.sin", "Math.cos", "Math.tan", "Math.atan2", "Math.hypot", "Number", "Number.isInteger", "Number.isFinite", "Number.isNaN", "Number.parseFloat", "Number.parseInt", "parseInt", "parseFloat", "isNaN", "isFinite", "String", "Boolean", "BigInt", "Symbol", "Array.isArray", "Array.from", "Array.of", "Object.keys", "Object.values", "Object.entries", "Object.fromEntries", "Object.freeze", "Object.is", "JSON.stringify", "JSON.parse", "encodeURIComponent", "decodeURIComponent", "structuredClone"],
+    "heuristic_methods": ["map", "filter", "reduce", "reduceRight", "slice", "concat", "join", "includes", "indexOf", "lastIndexOf", "find", "findIndex", "findLast", "some", "every", "flat", "flatMap", "at", "keys", "values", "entries", "toString", "toFixed", "toUpperCase", "toLowerCase", "trim", "trimStart", "trimEnd", "split", "replace", "replaceAll", "startsWith", "endsWith", "padStart", "padEnd", "repeat", "charAt", "charCodeAt", "substring", "match", "test", "has", "get", "toSorted", "toReversed", "with", "localeCompare"]
+  },
+  "control_calls": []
+}

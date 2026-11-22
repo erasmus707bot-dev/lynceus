@@ -3,6 +3,13 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const PYODIDE_DIR = path.dirname(require.resolve('pyodide/package.json'));
+const PYODIDE_VERSION: string = require('pyodide/package.json').version;
+const PYODIDE_FILES = ['pyodide.mjs', 'pyodide.asm.mjs', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json'];
+const PYODIDE_BYTES = PYODIDE_FILES.reduce((n, f) => n + fs.statSync(path.join(PYODIDE_DIR, f)).size, 0);
 
 // Content-Security-Policy, delivered by <meta> because GitHub Pages can't set headers.
 // Verified in Phase 0 (docs/PHASE0_REPORT.md). Added to the BUILD only: Vite's dev server
@@ -44,7 +51,7 @@ function swManifest(): Plugin {
         for (const f of fs.readdirSync(d)) {
           const p = path.join(d, f);
           if (fs.statSync(p).isDirectory()) walk(p);
-          else if (f !== 'sw.js') files.push(path.relative(dist, p).split(path.sep).join('/'));
+          else if (f !== 'sw.js' && !path.relative(dist, p).startsWith('vendor')) files.push(path.relative(dist, p).split(path.sep).join('/'));
         }
       };
       walk(dist);
@@ -55,7 +62,8 @@ function swManifest(): Plugin {
       const version = h.digest('hex').slice(0, 16);
       const sw = fs.readFileSync(swPath, 'utf8')
         .replace('self.__LYNCEUS_FILES__', JSON.stringify(['./', ...files]))
-        .replace('__LYNCEUS_VERSION__', version);
+        .replace('__LYNCEUS_VERSION__', version)
+        .replace('__PYODIDE_CACHE__', 'lynceus-pyodide-' + PYODIDE_VERSION);
       fs.writeFileSync(swPath, sw);
     },
   };
@@ -65,5 +73,7 @@ export default defineConfig({
   base: '/', // lynceus.scottchristensen.dev (decided 2026-11-22); relative asset URLs still work on localhost
   plugins: [svelte(), cspMeta(), swManifest()],
   build: { target: 'es2022', sourcemap: false },
+  worker: { format: 'es' },
+  define: { __PYODIDE_VERSION__: JSON.stringify(PYODIDE_VERSION), __PYODIDE_BYTES__: String(PYODIDE_BYTES) },
   test: { environment: 'jsdom', include: ['tests/unit/**/*.test.ts'] },
 });

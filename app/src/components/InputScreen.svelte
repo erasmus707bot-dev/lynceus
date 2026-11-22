@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { app, persist, setRemember } from '../lib/session.svelte';
+  import { app, persist, setRemember, runAnalysis } from '../lib/session.svelte';
+  import { filesFromDrop, hasFiles, type Named } from '../lib/drop';
   import { acceptBytes, makeFile, mergeFiles, pastedName, readZip } from '../lib/files';
   import { guessLang } from '../lib/detect';
   import { checkLimits } from '../lib/limits';
@@ -27,20 +28,19 @@
   const draft = $derived(draftFiles());
   const limits = $derived(checkLimits(draft, app.settings));
 
-  async function onFiles(e: Event) {
-    const input = e.currentTarget as HTMLInputElement;
-    const list = Array.from(input.files ?? []);
+  /** One pipeline for the file picker and drag-and-drop. Every rejected file is listed with a reason. */
+  async function ingest(list: Named[]) {
     if (!list.length) return;
     reading = true; error = '';
     try {
       const got: SourceFile[] = [];
-      for (const f of list) {
-        const bytes = new Uint8Array(await f.arrayBuffer());
-        if (/\.zip$/i.test(f.name)) {
+      for (const { path, file } of list) {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        if (/\.zip$/i.test(file.name)) {
           const z = readZip(bytes);
           got.push(...z.files); app.pendingSkipped = [...app.pendingSkipped, ...z.skipped];
         } else {
-          const r = acceptBytes((f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name, bytes);
+          const r = acceptBytes(path, bytes);
           if (r.file) got.push(r.file); if (r.skipped) app.pendingSkipped = [...app.pendingSkipped, r.skipped];
         }
       }
@@ -49,8 +49,37 @@
       error = 'Could not read those files: ' + (err as Error).message;
     } finally {
       reading = false;
-      input.value = ''; // the browser's copy of the file list is released too
     }
+  }
+
+  async function onFiles(e: Event) {
+    const input = e.currentTarget as HTMLInputElement;
+    const list = Array.from(input.files ?? []).map((f) => ({ path: (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name, file: f }));
+    await ingest(list);
+    input.value = ''; // the browser's copy of the file list is released too
+  }
+
+  // ---- drag and drop ----
+  let dragDepth = $state(0);
+  let dragOverPaste = $state(false);
+  const dragging = $derived(dragDepth > 0);
+  function onDragEnter(e: DragEvent) { if (hasFiles(e)) { e.preventDefault(); dragDepth++; } }
+  function onDragLeave(e: DragEvent) { if (hasFiles(e)) dragDepth = Math.max(0, dragDepth - 1); }
+  function onDragOver(e: DragEvent) { if (hasFiles(e)) { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'; } }
+  async function onDrop(e: DragEvent) {
+    if (!hasFiles(e) || !e.dataTransfer) return;
+    e.preventDefault();
+    dragDepth = 0;
+    const onPaste = dragOverPaste;
+    dragOverPaste = false;
+    const list = await filesFromDrop(e.dataTransfer);
+    // One code file dropped on the paste box: put its text in the box so it can be edited first.
+    if (onPaste && list.length === 1 && !/\.zip$/i.test(list[0].file.name)) {
+      const r = acceptBytes(list[0].path, new Uint8Array(await list[0].file.arrayBuffer()));
+      if (r.file) { app.pasteText = r.file.text; app.pasteName = r.file.path; app.pasteLang = 'auto'; return; }
+      if (r.skipped) { app.pendingSkipped = [...app.pendingSkipped, r.skipped]; return; }
+    }
+    await ingest(list);
   }
 
   function removePending(path: string) { app.pending = app.pending.filter((f) => f.path !== path); }
@@ -61,13 +90,16 @@
     if (limits.level === 'stop') { error = limits.message; return; }
     app.workspace = { files: draft, skipped: app.pendingSkipped, diff: app.diffText, spec: app.specText, loadedAt: Date.now() };
     await persist();
-    app.notice = `Loaded ${limits.message} Analysis views arrive in Phase 2.`;
+    app.notice = `Loaded ${limits.message} Open the Code tab to read it.`;
+    void runAnalysis();
   }
 
   const fmt = (n: number) => n.toLocaleString('en-US');
 </script>
 
-<section aria-labelledby="input-h">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<section aria-labelledby="input-h" class:dragging ondragenter={onDragEnter} ondragleave={onDragLeave} ondragover={onDragOver} ondrop={onDrop}>
+  {#if dragging}<div class="drop-hint" aria-hidden="true">Drop files, a folder or a .zip anywhere. Drop one file on the paste box to edit it first.</div>{/if}
   <h1 id="input-h">Review some code</h1>
   <p class="callout blue">Everything stays on this device. Nothing is uploaded, and by default nothing is saved after you close this tab.</p>
 
@@ -76,7 +108,9 @@
     <div class="card">
       <h2><label for="paste">Paste code</label></h2>
       <textarea id="paste" class="code" rows="10" spellcheck="false" autocapitalize="off" autocomplete="off"
-        placeholder="Paste one file here" bind:value={app.pasteText}></textarea>
+        placeholder="Paste one file here, or drag a file onto this box" bind:value={app.pasteText}
+      class:drop-target={dragging} class:drop-over={dragOverPaste}
+      ondragenter={() => (dragOverPaste = true)} ondragleave={() => (dragOverPaste = false)}></textarea>
       <div class="grid2">
         <label>File name (optional)
           <input type="text" bind:value={app.pasteName} placeholder={pastedName(guess?.lang ?? 'python', 'code')} autocapitalize="off" spellcheck="false" />
@@ -111,6 +145,7 @@
   <div class="col">
     <div class="card">
       <h2>Upload files or a .zip</h2>
+    <p class="muted small">Or drag files, a whole folder, or a .zip onto this page.</p>
       <label class="btn upload">
         {reading ? 'Reading…' : 'Choose files'}
         <input type="file" multiple accept=".py,.js,.mjs,.cjs,.jsx,.zip,application/zip" onchange={onFiles} class="sr-only" data-testid="file-input" />
@@ -182,6 +217,10 @@
     .cols { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: start; }
     #paste { min-height: 55vh; }
   }
+  section.dragging .col > :global(.card:has([data-testid='file-input'])) { outline: 3px dashed var(--accent); outline-offset: 2px; }
+  .drop-hint { position: sticky; top: 64px; z-index: 5; margin: 0 0 12px; padding: 12px 14px; border-radius: 12px; background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  textarea.drop-target { outline: 2px dashed var(--border); }
+  textarea.drop-over { outline: 3px dashed var(--accent); }
   textarea { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); resize: vertical; }
   input[type='text'], select { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
   label { display: block; margin: 10px 0 4px; }

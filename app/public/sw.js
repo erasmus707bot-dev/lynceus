@@ -3,6 +3,9 @@
 const VERSION = '__LYNCEUS_VERSION__';
 const CACHE = 'lynceus-app-' + VERSION;
 const FILES = self.__LYNCEUS_FILES__;
+// Pyodide (Lynceus's own self-hosted Python runtime, ~13 MB) is NOT precached. It is stored the
+// first time a Python review downloads it, so later Python reviews work offline.
+const PYODIDE_CACHE = '__PYODIDE_CACHE__';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -10,7 +13,10 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    for (const key of await caches.keys()) if (key.startsWith('lynceus-app-') && key !== CACHE) await caches.delete(key);
+    for (const key of await caches.keys()) {
+      if (key.startsWith('lynceus-app-') && key !== CACHE) await caches.delete(key);
+      if (key.startsWith('lynceus-pyodide-') && key !== PYODIDE_CACHE) await caches.delete(key);
+    }
     await self.clients.claim();
   })());
 });
@@ -19,6 +25,17 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
   if (req.method !== 'GET' || url.origin !== self.location.origin) return; // never touch anything else
+  if (url.pathname.includes('/vendor/pyodide/')) {
+    event.respondWith((async () => {
+      const cache = await caches.open(PYODIDE_CACHE);
+      const hit = await cache.match(req, { ignoreSearch: true });
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) await cache.put(req, res.clone());
+      return res;
+    })());
+    return;
+  }
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     const hit = await cache.match(req, { ignoreSearch: true });

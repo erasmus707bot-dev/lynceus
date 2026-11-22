@@ -20,3 +20,11 @@ Needs Node 20.19+ or 22.12+ (Vite 8).
 - localStorage holds settings only (whitelisted fields: theme, size limits, remember flag).
 - The service worker caches the built app files only (list generated at build time) and ignores other origins.
 - CSP is delivered by `<meta>` in the build (see `vite.config.ts`, verified in Phase 0).
+
+## Phase 2 notes
+
+- `npm run dev` and `npm run build` first copy Pyodide from `node_modules/pyodide` into `public/vendor/pyodide/` (gitignored). Run `npm ci --legacy-peer-deps` again after pulling, because Phase 2 added dependencies.
+- Python support (about 13.5 MB) downloads only after you press **Download Python support** the first time Python code is loaded. It is then kept in its own cache (`lynceus-pyodide-<version>`), so later visits and offline use skip the prompt.
+- Drag files or a folder anywhere on the Input screen. Dropping a single file on the paste box fills the box instead.
+- Role rules live in `rules/javascript.json` and `rules/python.json`. Edit them to teach Lynceus new I/O or pure functions.
+- Static hosts must serve `.mjs` as JavaScript and `.wasm` as `application/wasm` for Python to load.

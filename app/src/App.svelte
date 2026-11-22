@@ -3,6 +3,7 @@
   import TabBar from './components/TabBar.svelte';
   import InputScreen from './components/InputScreen.svelte';
   import Placeholder from './components/Placeholder.svelte';
+  import CodeTab from './components/CodeTab.svelte';
   import { app } from './lib/session.svelte';
 </script>
 
@@ -19,7 +20,7 @@
   {:else if app.tab === 'queue'}
     <Placeholder title="Reading queue" phase={4} what="the “Read these first” list of the riskiest functions, with score breakdowns." />
   {:else if app.tab === 'code'}
-    <Placeholder title="Code" phase={2} what="role coloring, nesting guides and collapsible blocks." />
+    <CodeTab />
   {:else if app.tab === 'tests'}
     <Placeholder title="Tests" phase={3} what="running the tests on this device with per-test coverage." />
   {:else}

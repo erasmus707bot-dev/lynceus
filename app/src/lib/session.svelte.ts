@@ -2,6 +2,8 @@
 import type { LangChoice, SourceFile, Workspace, SkippedFile } from './types';
 import { loadSettings, saveSettings, applyTheme, type Settings } from './settings';
 import { clearSession, loadSession, saveSession } from './retention';
+import type { Analysis, Role } from '../analysis/model';
+import { analyze, pyodideCached, stop as stopWorker } from '../analysis/client';
 
 export type Tab = 'input' | 'queue' | 'code' | 'tests' | 'report';
 
@@ -19,7 +21,62 @@ export const app = $state({
   pendingSkipped: [] as SkippedFile[],
   workspace: null as Workspace | null,
   notice: '' as string,
+  // analysis (derived from the workspace; never persisted)
+  analysis: null as Analysis | null,
+  analysisStatus: 'idle' as 'idle' | 'running' | 'needs-consent' | 'done' | 'error',
+  analysisMsg: '',
+  pythonSkipped: false,
+  pyConsent: false,          // this session only
+  codeFile: null as string | null,
+  selectedLine: null as number | null,
+  showHelp: false,
+  roleFilter: [] as Role[],  // calm by default: no role tinted until the reviewer asks
+  collapsed: {} as Record<string, boolean>,
+  wrap: typeof window !== 'undefined' ? window.innerWidth < 760 : true,
 });
+
+export async function runAnalysis(): Promise<void> {
+  const ws = app.workspace;
+  if (!ws) return;
+  const hasPy = ws.files.some((f) => f.lang === 'python');
+  if (hasPy && !app.pyConsent && !(await pyodideCached())) {
+    app.analysisStatus = 'needs-consent';
+    return;
+  }
+  await doAnalyze(hasPy);
+}
+
+/** allowPython=false analyzes the JavaScript files only and lists the Python ones as skipped. */
+export async function doAnalyze(allowPython: boolean): Promise<void> {
+  const ws = app.workspace;
+  if (!ws) return;
+  if (allowPython) app.pyConsent = true;
+  app.analysisStatus = 'running';
+  app.analysisMsg = 'Analyzing…';
+  try {
+    const r = await analyze($state.snapshot(ws.files) as typeof ws.files, allowPython, (m) => (app.analysisMsg = m));
+    if (app.workspace !== ws) return; // cleared or replaced meanwhile
+    app.analysis = r.analysis;
+    app.pythonSkipped = r.pythonSkipped;
+    app.analysisStatus = 'done';
+    app.analysisMsg = '';
+    app.collapsed = {};
+    app.selectedLine = null;
+    if (!app.codeFile || !r.analysis.files.some((f) => f.path === app.codeFile)) {
+      const first = ws.files.find((f) => !f.isTest) ?? ws.files[0];
+      app.codeFile = r.analysis.files.find((f) => f.path === first?.path)?.path ?? r.analysis.files[0]?.path ?? null;
+    }
+  } catch (e) {
+    app.analysisStatus = 'error';
+    app.analysisMsg = (e as Error).message;
+  }
+}
+
+function resetAnalysis(): void {
+  stopWorker();
+  app.analysis = null; app.analysisStatus = 'idle'; app.analysisMsg = ''; app.pythonSkipped = false;
+  app.codeFile = null; app.selectedLine = null; app.collapsed = {};
+}
 
 export function setSettings(patch: Partial<Settings>): void {
   app.settings = { ...app.settings, ...patch };
@@ -45,7 +102,7 @@ function snapshot(): Workspace | null {
 export async function restoreIfRemembered(): Promise<void> {
   if (!app.settings.remember) { await clearSession(); return; } // belt and braces: never leave stale data
   const ws = await loadSession();
-  if (ws) { app.workspace = ws; app.notice = 'Restored your remembered session on this device.'; }
+  if (ws) { app.workspace = ws; app.notice = 'Restored your remembered session on this device.'; void runAnalysis(); }
 }
 
 /** "Clear everything": wipes memory and storage, turns Remember off. Theme is kept. */
@@ -54,6 +111,8 @@ export async function clearEverything(): Promise<void> {
   app.testsText = ''; app.diffText = ''; app.specText = '';
   app.pending = []; app.pendingSkipped = [];
   app.workspace = null;
+  resetAnalysis();
+  app.pyConsent = false;
   setSettings({ remember: false });
   await clearSession();
   try { sessionStorage.clear(); } catch { /* ignore */ }
