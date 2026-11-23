@@ -29,8 +29,11 @@ def lynceus_run(cfg_json):
             name = m.group(1)
             local = os.path.exists(os.path.join(proj, name.split(".")[0] + ".py")) or os.path.isdir(os.path.join(proj, name.split(".")[0]))
             if not local:
-                return (f"Missing package '{name.split('.')[0]}'. Package downloads are off in v1, so only your "
-                        "uploaded files and Python's standard library are available.\n\n")
+                if cfg.get("packagesMode"):
+                    return (f"Missing package '{name.split('.')[0]}'. Package downloads are on: check the names "
+                            "under \"Package downloads\" on the Tests tab, press the download button, then run the tests again.\n\n")
+                return (f"Missing package '{name.split('.')[0]}'. Package downloads are off, so only your uploaded "
+                        "files and Python's standard library are available. You can turn downloads on in the Tests tab.\n\n")
         return ""
 
     def split(nodeid):

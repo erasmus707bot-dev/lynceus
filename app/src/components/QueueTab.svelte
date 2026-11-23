@@ -47,7 +47,7 @@
       <progress max="100" value={review.progress.pct} aria-hidden="true"></progress>
     </div>
     <p class="small muted">The riskiest functions by a 0–100 score. Tap a score to see how it was worked out.{review.testPaths.size ? ' Functions in test files are left out.' : ''}</p>
-    {#if anyNoEvidence}<p class="callout beige small" data-testid="no-evidence">No test evidence{review.coverage ? ' for some files' : ''}: the 20% coverage weight is shared out over the other factors. Run the tests on the Tests tab to include it.</p>{/if}
+    {#if anyNoEvidence}<p class="callout beige small" data-testid="no-evidence">No test evidence{review.coverage ? ' for some files' : ''}: the coverage and failing-test weights are shared out over the other factors. Run the tests on the Tests tab to include them.</p>{/if}
     {#if review.diff?.problems.length}
       <div class="callout warn small" data-testid="diff-problems">
         <strong>Diff problems</strong>

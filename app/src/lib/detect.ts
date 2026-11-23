@@ -1,6 +1,7 @@
 import type { Lang } from './types';
 
-const EXT: Record<string, Lang> = { py: 'python', pyw: 'python', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript' };
+// TypeScript is reviewed by the JavaScript adapter (src/analysis/ts.ts), so .ts files are lang 'javascript'.
+const EXT: Record<string, Lang> = { py: 'python', pyw: 'python', js: 'javascript', mjs: 'javascript', cjs: 'javascript', jsx: 'javascript', ts: 'javascript', tsx: 'javascript', mts: 'javascript', cts: 'javascript' };
 
 export function langFromPath(path: string): Lang | null {
   const m = /\.([a-z0-9]+)$/i.exec(path);
@@ -30,7 +31,7 @@ export function guessLang(text: string): { lang: Lang; confident: boolean } {
 export function isTestPath(path: string, lang: Lang): boolean {
   const base = path.split('/').pop() ?? path;
   if (lang === 'python') return /^test_.*\.py$/.test(base) || /_test\.py$/.test(base) || base === 'conftest.py';
-  return /\.(test|spec)\.[cm]?jsx?$/.test(base) || path.split('/').includes('__tests__');
+  return /\.(test|spec)\.[cm]?[jt]sx?$/.test(base) || path.split('/').includes('__tests__');
 }
 
 export function countLines(text: string): number {

@@ -1,6 +1,7 @@
 import { unzipSync, strFromU8 } from 'fflate';
 import type { Lang, LangChoice, SkippedFile, SourceFile } from './types';
 import { countLines, guessLang, isTestPath, langFromPath } from './detect';
+import { isTsPath } from '../analysis/ts';
 
 const IGNORED_DIRS = ['__MACOSX', 'node_modules', '.git', '__pycache__', '.venv', 'venv', 'dist', 'build'];
 const MAX_FILE_BYTES = 2_000_000;
@@ -13,7 +14,7 @@ export function makeFile(path: string, text: string, choice: LangChoice = 'auto'
   const p = normalizePath(path);
   let lang: Lang, langSource: SourceFile['langSource'];
   const byExt = langFromPath(p);
-  if (choice !== 'auto') { lang = choice; langSource = 'manual'; }
+  if (choice !== 'auto') { lang = choice === 'typescript' ? 'javascript' : choice; langSource = 'manual'; }
   else if (byExt) { lang = byExt; langSource = 'extension'; }
   else { lang = guessLang(text).lang; langSource = 'content (heuristic)'; }
   return { path: p, text, lang, langSource, lines: countLines(text), isTest: isTestPath(p, lang) };
@@ -31,7 +32,7 @@ export function acceptBytes(path: string, bytes: Uint8Array): { file?: SourceFil
   const parts = p.split('/');
   const dir = parts.find((s) => IGNORED_DIRS.includes(s));
   if (dir) return { skipped: { path: p, reason: `inside ignored folder "${dir}"` } };
-  if (!langFromPath(p)) return { skipped: { path: p, reason: 'not a Python or JavaScript file (v1 reviews .py and .js only)' } };
+  if (!langFromPath(p)) return { skipped: { path: p, reason: 'not a Python, JavaScript or TypeScript file (Lynceus reviews .py, .js and .ts)' } };
   if (bytes.length > MAX_FILE_BYTES) return { skipped: { path: p, reason: `file is over ${MAX_FILE_BYTES / 1e6} MB` } };
   if (looksBinary(bytes)) return { skipped: { path: p, reason: 'looks like a binary file' } };
   return { file: makeFile(p, strFromU8(bytes)) };
@@ -65,7 +66,11 @@ export function mergeFiles(existing: SourceFile[], incoming: SourceFile[]): Sour
   return [...map.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
 
-export function pastedName(lang: Lang, kind: 'code' | 'tests'): string {
+export function pastedName(lang: Lang | 'typescript', kind: 'code' | 'tests'): string {
   if (lang === 'python') return kind === 'tests' ? 'test_pasted.py' : 'pasted.py';
+  if (lang === 'typescript') return kind === 'tests' ? 'pasted.test.ts' : 'pasted.ts';
   return kind === 'tests' ? 'pasted.test.js' : 'pasted.js';
 }
+
+/** Short label for file lists: Python, JS or TS. */
+export const langLabel = (f: Pick<SourceFile, 'lang' | 'path'>) => (f.lang === 'python' ? 'Python' : isTsPath(f.path) ? 'TS' : 'JS');

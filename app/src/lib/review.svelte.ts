@@ -2,7 +2,7 @@
 // Recomputed automatically when any of them change; nothing here is ever persisted.
 import { app } from './session.svelte';
 import { applyDiff } from '../review/diff';
-import { scoreFunctions } from '../review/risk';
+import { scoreFunctions, FAILING_OUTCOMES } from '../review/risk';
 import { buildGraph } from '../review/callgraph';
 import { parseSpec, suggest } from '../review/spec';
 import { scaffolding } from '../review/scaffolding';
@@ -14,7 +14,9 @@ class Review {
   // Test files are evidence, not code under review: their functions are left out of the queue,
   // scaffolding and hand-linking (tests are linked as tests, from the test run).
   testPaths = $derived(new Set((app.workspace?.files ?? []).filter((f) => f.isTest).map((f) => f.path)));
-  risks = $derived(scoreFunctions(app.analysis, this.coverage, this.diff, app.settings.riskWeights).filter((r) => !this.testPaths.has(r.path)));
+  /** test id -> name for tests that failed, timed out or crashed (the "ran during a failing test" factor). */
+  failing = $derived(app.testRun ? new Map(Object.values(app.testRun.results).filter((r) => FAILING_OUTCOMES.includes(r.outcome)).map((r) => [r.id, r.name] as const)) : null);
+  risks = $derived(scoreFunctions(app.analysis, this.coverage, this.diff, app.settings.riskWeights, this.failing).filter((r) => !this.testPaths.has(r.path)));
   riskById = $derived(new Map(this.risks.map((r) => [r.id, r])));
   graph = $derived(buildGraph(app.analysis));
   spec = $derived(parseSpec(app.workspace?.spec ?? ''));

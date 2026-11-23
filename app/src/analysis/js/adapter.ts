@@ -1,6 +1,7 @@
 // JavaScript adapter: @babel/parser syntax tree -> shared analysis model.
 // Every role comes from a rule in rules/javascript.json or from scope analysis of the tree.
 import { parse } from '@babel/parser';
+import { parserPlugins, unwrapTsExpressions, isTsPath, moduleCandidates } from '../ts';
 import type * as T from '@babel/types';
 import RULES from '../../../rules/javascript.json';
 import type { Block, Evidence, FileAnalysis, FunctionInfo, Role, Span, Statement } from '../model';
@@ -105,7 +106,7 @@ function resolveRelative(from: string, spec: string, paths: Set<string>): string
   const out: string[] = [];
   for (const p of parts) { if (p === '..') out.pop(); else if (p && p !== '.') out.push(p); }
   const base = out.join('/');
-  for (const cand of [base, base + '.js', base + '.mjs', base + '.cjs', base + '.jsx', base + '/index.js']) if (paths.has(cand)) return cand;
+  for (const cand of moduleCandidates(base)) if (paths.has(cand)) return cand;
   return null;
 }
 
@@ -146,7 +147,8 @@ export class JsAnalyzer {
       const ctx: FileCtx = { file, idx, out, counter: 0, imports: new Map(), topFns: new Map(), classMethods: new Map() };
       this.ctxs.push(ctx);
       try {
-        const ast = parse(file.text, { sourceType: 'unambiguous', plugins: ['jsx'], allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true });
+        const ast = parse(file.text, { sourceType: 'unambiguous', plugins: parserPlugins(file.path), allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true });
+        if (isTsPath(file.path)) unwrapTsExpressions(ast);
         parsed.push({ ctx, ast });
       } catch (e) {
         const err = e as Error & { loc?: { line: number; column: number } };
@@ -369,8 +371,23 @@ export class JsAnalyzer {
       case 'ExportAllDeclaration':
         this.addStatement(ctx, n, n.type, [{ role: 'pure', rule: 'module.export', detail: 'export *', certainty: 'certain', source: 'syntax tree' }], fn);
         return;
+      // TypeScript (src/analysis/ts.ts): type-only declarations are not code to review, so they get no statement.
+      case 'TSInterfaceDeclaration': case 'TSTypeAliasDeclaration': case 'TSDeclareFunction': return;
+      case 'TSModuleDeclaration':
+        if (n.declare || n.body?.type !== 'TSModuleBlock') return;
+        this.body(ctx, n.body.body as Node[], scope, fn, level, cls);
+        return;
+      case 'TSEnumDeclaration':
+        this.addStatement(ctx, n, n.type, [{ role: 'pure', rule: 'declare.enum', detail: `declares enum ${n.id.name} (a constant object)`, certainty: 'certain', source: 'syntax tree' }], fn);
+        return;
+      case 'TSImportEqualsDeclaration':
+        this.addStatement(ctx, n, n.type, [{ role: 'pure', rule: 'module.import', detail: 'import = require()', certainty: 'certain', source: 'syntax tree' }], fn);
+        return;
+      case 'TSExportAssignment':
+        this.addStatement(ctx, n, n.type, [...this.expr(ctx, n.expression as Node, scope, fn, cls), { role: 'pure', rule: 'module.export', detail: 'export =', certainty: 'certain', source: 'syntax tree' }], fn);
+        return;
       default: {
-        // Anything else (with, debugger, TS-only nodes): keep it visible as unknown rather than guessing.
+        // Anything else (with, debugger): keep it visible as unknown rather than guessing.
         this.addStatement(ctx, n, n.type, [{ role: 'unknown', rule: 'statement.unsupported', detail: `statement type ${n.type} is not classified`, certainty: 'certain', source: 'syntax tree' }], fn);
       }
     }

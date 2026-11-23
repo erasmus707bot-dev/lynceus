@@ -45,7 +45,8 @@ export function stopTests(): void { active?.stop(); }
 
 const secs = (ms: number) => `${Math.round(ms / 100) / 10} s`;
 
-export async function runTests(files: SourceFile[], limits: RunLimits, onProgress: (p: Progress) => void, langsAllowed: Lang[]): Promise<RunOutcome> {
+export async function runTests(files: SourceFile[], limits: RunLimits, onProgress: (p: Progress) => void, langsAllowed: Lang[],
+  py: { extraWheels?: { file: string; data: Uint8Array }[]; packagesMode?: boolean } = {}): Promise<RunOutcome> {
   const detected = detectTests(files);
   const out: RunOutcome = { tests: [], results: {}, coverage: {}, notes: [], langs: [], stopped: false };
   let stopRequested = false;
@@ -59,7 +60,8 @@ export async function runTests(files: SourceFile[], limits: RunLimits, onProgres
       if (!testFiles.length || !langsAllowed.includes(lang) || stopRequested) continue;
       out.langs.push(lang);
       const langFiles = files.filter((f) => f.lang === lang || (lang === 'javascript' && f.path.endsWith('.json')));
-      const input: RunInput = { lang, files: langFiles.map((f) => ({ path: f.path, text: f.text })), testFiles, skip: [], pyodideURL };
+      const input: RunInput = { lang, files: langFiles.map((f) => ({ path: f.path, text: f.text })), testFiles, skip: [], pyodideURL,
+        ...(lang === 'python' ? { extraWheels: py.extraWheels ?? [], packagesMode: !!py.packagesMode } : {}) };
       let budget = limits.runMs;
       let restarts = 0;
       const known = new Map<string, TestInfo>();

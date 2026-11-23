@@ -3,6 +3,8 @@
   import { detectTests } from '../sandbox/detect-tests';
   import type { Outcome, TestResult } from '../sandbox/protocol';
   import PyodideConsent from './PyodideConsent.svelte';
+  import PackagePanel from './PackagePanel.svelte';
+  import { packagesMode } from '../lib/packages';
 
   const found = $derived(app.workspace ? detectTests(app.workspace.files) : []);
   const guessCount = $derived(found.reduce((n, f) => n + f.count, 0));
@@ -46,7 +48,7 @@
   {:else if !found.length}
     <div class="callout beige" role="status" data-testid="no-tests">
       <p><strong>No tests found</strong> in the loaded code, so there is nothing to run and the coverage layer is off.</p>
-      <p class="small">Lynceus looks for pytest functions named <code>test_…</code> and JavaScript <code>test(…)</code> or <code>it(…)</code> calls. Paste tests into the Tests box on the Input tab, or upload test files.</p>
+      <p class="small">Lynceus looks for pytest functions named <code>test_…</code> and JavaScript or TypeScript <code>test(…)</code> or <code>it(…)</code> calls. Paste tests into the Tests box on the Input tab, or upload test files.</p>
     </div>
   {:else if app.testStatus === 'needs-consent'}
     <PyodideConsent purpose="test" onaccept={() => runTests({ allowPython: true })} onskip={() => runTests({ allowPython: false })} />
@@ -64,7 +66,8 @@
         <label>Per run <input type="number" min="1" max="3600" value={app.settings.runTimeoutSec} onchange={(e) => setLimit('runTimeoutSec', e.currentTarget.value)}> s</label>
       </details>
     </div>
-    <p class="small muted">Tests run in a sandbox on this device with the network blocked. Package downloads are off in v1, so only your files and the standard library are available.</p>
+    <p class="small muted">Tests run in a sandbox on this device with the network blocked. {packagesMode() ? 'Package downloads are on (below).' : 'Package downloads are off, so only your files and the standard library are available.'}</p>
+    <PackagePanel />
 
     {#if app.testStatus === 'running' && p}
       <div class="callout blue progress" role="status" aria-live="polite">

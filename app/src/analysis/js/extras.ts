@@ -40,6 +40,24 @@ export function jsExtras({ ast, text, out, idx, fnOfNode, imports }: JsExtrasInp
   const usesEval = /\beval\s*\(|\bwith\s*\(/.test(text);
   const isModule = ast.program.sourceType === 'module' || /\b(require\s*\(|module\.exports|exports\.)/.test(text);
 
+  // ---------- TypeScript: names used only in type positions ----------
+  // Babel's scope tracker does not count `x: Config` or `implements Base` as a use of Config/Base, so collect
+  // those identifiers by name and treat them as reads of the top-level binding with that name.
+  const typeUses = new Map<string, Node[]>();
+  const leftmost = (n: Node | null | undefined): Node | null => {
+    while (n && n.type === 'TSQualifiedName') n = n.left;
+    while (n && n.type === 'MemberExpression') n = n.object;
+    return n && n.type === 'Identifier' ? n : null;
+  };
+  if (/\.(ts|tsx|mts|cts)$/i.test(out.path)) {
+    const noteUse = (n: Node | null) => { if (n && n.type === 'Identifier') typeUses.set(n.name, [...(typeUses.get(n.name) ?? []), n]); };
+    traverse(ast, {
+      TSTypeReference(p: AnyPath) { noteUse(leftmost(p.node.typeName)); },
+      TSTypeQuery(p: AnyPath) { noteUse(leftmost(p.node.exprName)); },
+      TSExpressionWithTypeArguments(p: AnyPath) { noteUse(leftmost(p.node.expression)); },
+    });
+  }
+
   // ---------- bindings (scope-aware) ----------
   const seen = new Set<object>();
   const loc = (node: Node, access: Ref['access']): Ref | null =>
@@ -64,7 +82,7 @@ export function jsExtras({ ast, text, out, idx, fnOfNode, imports }: JsExtrasInp
       if (bp.isCatchClause?.()) continue; // catch (e): listed nowhere, unused-ness is normal
       let kind: Binding['kind'] = 'variable';
       let fnTarget: string | undefined;
-      if (b.kind === 'module') kind = 'import';
+      if (b.kind === 'module' || bp.isImportSpecifier?.() || bp.isImportDefaultSpecifier?.() || bp.isImportNamespaceSpecifier?.()) kind = 'import';
       else if (b.kind === 'param') kind = 'param';
       else if (bp.isFunctionDeclaration() || bp.isFunctionExpression()) { kind = 'function'; fnTarget = fnOfNode.get(bp.node); }
       else if (bp.isClassDeclaration() || bp.isClassExpression()) kind = 'class';
@@ -88,6 +106,7 @@ export function jsExtras({ ast, text, out, idx, fnOfNode, imports }: JsExtrasInp
         const ids = cv.getBindingIdentifiers?.(true)?.[name] as Node | Node[] | undefined;
         for (const id of ids ? (Array.isArray(ids) ? ids : [ids]) : []) push(loc(id, access));
       }
+      if (scope.path.isProgram()) for (const tn of typeUses.get(name) ?? []) push(loc(tn, 'read'));
       refs.sort((a, c) => a.line - c.line || a.col - c.col);
       const fnDeclared = enclosingFn(bp.isVariableDeclarator() ? bp.parentPath : bp.parentPath ?? bp);
       let certainty: Certainty = 'certain';
@@ -160,7 +179,8 @@ export function jsExtras({ ast, text, out, idx, fnOfNode, imports }: JsExtrasInp
       if (!info || info.name === '(callback)') return;
       const body = node.body.body;
       const line = info.span.line;
-      if (!body.length && !(node.body.innerComments?.length))
+      const paramProps = node.params.some((p: Node) => p.type === 'TSParameterProperty'); // constructor(private x: T) {} assigns this.x
+      if (!body.length && !(node.body.innerComments?.length) && !paramProps)
         add({ check: 'placeholder', rule: 'placeholder.empty', line, endLine: info.span.endLine, fn: id, detail: `${info.qualname}() has an empty body`, certainty: 'certain' });
       else if (body.length === 1 && body[0].type === 'ThrowStatement') {
         const arg = body[0].argument;

@@ -7,7 +7,7 @@ export interface TestFileInfo { path: string; lang: Lang; count: number; inline:
 
 const PY_FILE = /(^|\/)(test_[^/]*|[^/]*_test)\.py$/;
 const PY_FN = /^\s*(?:async\s+)?def\s+test\w*\s*\(/gm;
-const JS_FILE = /\.(test|spec)\.[cm]?jsx?$/;
+const JS_FILE = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const JS_CALL = /^\s*(?:test|it|xit|xtest|fit)(?:\.(?:only|skip|todo))?\s*\(\s*['"`]/gm;
 
 export function detectTests(files: Pick<SourceFile, 'path' | 'text' | 'lang'>[]): TestFileInfo[] {

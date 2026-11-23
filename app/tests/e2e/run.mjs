@@ -104,7 +104,7 @@ try {
   await page.getByTestId('pending').waitFor();
   const pend = await page.getByTestId('pending').innerText();
   check('zip upload keeps folder paths', pend.includes('pkg/calc.py') && pend.includes('tests/test_calc.py') && /test/.test(pend), pend);
-  check('zip upload lists skipped file with reason', /notes\.txt[\s\S]*not a Python or JavaScript/.test(await page.getByTestId('skipped').innerText()));
+  check('zip upload lists skipped file with reason', /notes\.txt[\s\S]*not a Python, JavaScript or TypeScript/.test(await page.getByTestId('skipped').innerText()));
 
   // ---- multi-file upload
   await page.getByTestId('file-input').setInputFiles([
@@ -603,10 +603,12 @@ try {
     await p.close();
   }
 
-  // ---- Phase 6: bundled demos. Run their tests, then compare the Queue with the hand-computed top 5 (docs/PHASE6_REPORT.md).
+  // ---- Phase 6: bundled demos. Run their tests, then compare the Queue with the hand-computed top 5.
+  // Phase 7 weights (25/15/15/15/10 + failing 20), hand-computed in docs/PHASE7_REPORT.md. Six places, so the
+  // Python function whose test fails (restock_needed, 6th) is checked too.
   const HAND_TOP5 = {
-    javascript: [['applyDiscounts', 52], ['shippingCost', 33], ['exportCartCsv', 32], ['sendReceipt', 23], ['refundOrder', 20]],
-    python: [['allocate_orders', 50], ['export_stock_report', 39], ['load_config', 36], ['reserve', 28], ['order_value', 23]],
+    javascript: [['applyDiscounts', 62], ['shippingCost', 28], ['exportCartCsv', 24], ['sendReceipt', 17], ['refundOrder', 15], ['cartSubtotal', 11]],
+    python: [['allocate_orders', 39], ['export_stock_report', 30], ['load_config', 27], ['reserve', 24], ['order_value', 21], ['restock_needed', 20]],
   };
   for (const id of ['javascript', 'python']) {
     const p = await ctx.newPage();
@@ -631,8 +633,16 @@ try {
     await nav.getByRole('button', { name: 'Queue' }).click();
     await p.getByTestId('queue-item').first().waitFor();
     const got = [];
-    for (const li of (await p.getByTestId('queue-item').all()).slice(0, 5)) got.push([await li.getAttribute('data-fn'), Number((await li.getByTestId('score').innerText()).match(/\d+/)[0])]);
-    check(`demo (${id}): Queue top 5 matches the hand calculation (acceptance #5, #6)`, JSON.stringify(got) === JSON.stringify(HAND_TOP5[id]), JSON.stringify(got));
+    for (const li of (await p.getByTestId('queue-item').all()).slice(0, 6)) got.push([await li.getAttribute('data-fn'), Number((await li.getByTestId('score').innerText()).match(/\d+/)[0])]);
+    check(`demo (${id}): Queue top 6 matches the hand calculation (acceptance #5, #6)`, JSON.stringify(got) === JSON.stringify(HAND_TOP5[id]), JSON.stringify(got));
+    {
+      const failFn = id === 'python' ? 'restock_needed' : 'applyDiscounts';
+      const li = p.locator(`[data-testid=queue-item][data-fn="${failFn}"]`);
+      await li.getByTestId('score').click();
+      const bd = await li.getByTestId('breakdown').innerText();
+      check(`demo (${id}): ${failFn} gets +20 for "Ran during a failing test", naming the test`, /Ran during a failing test\s*\+20/.test(bd) && /ran during 1 failing test: /.test(bd), bd.slice(0, 400));
+      await li.getByTestId('score').click();
+    }
     if (id === 'javascript') await p.screenshot({ path: path.join(ROOT, '..', '..', 'docs', 'phase6-demo-queue.png') });
     await nav.getByRole('button', { name: 'Code' }).click();
     const file0 = id === 'python' ? 'inventory.py' : 'cart.js';
@@ -647,6 +657,98 @@ try {
     check(`demo (${id}): report lists the planted problems`, missing.length === 0, 'missing: ' + missing.join(', '));
     if (id === 'python') await p.screenshot({ path: path.join(ROOT, '..', '..', 'docs', 'phase6-demo-report.png') });
     await p.close();
+  }
+
+  // ================= Phase 7: TypeScript, package downloads, Share to Lynceus =================
+  {
+    const TS_SRC = "export interface Item { price: number; qty: number }\nexport enum Tier { Basic, Gold }\nexport function total(items: Item[], tier: Tier = Tier.Basic): number {\n  let sum = 0;\n  for (const it of items) {\n    sum += it.price * it.qty;\n  }\n  if (tier === Tier.Gold) {\n    return sum * 0.9;\n  }\n  return sum as number;\n}\n";
+    const TS_TEST = "import { total, Tier, type Item } from './order';\nconst items: Item[] = [{ price: 10, qty: 2 }];\ntest('basic total', () => { expect(total(items)).toBe(20); });\ntest('gold is wrong on purpose', () => { expect(total(items, Tier.Gold)!).toBe(20); });\n";
+    const { p, res, nav } = await runProject([file('src/order.ts', TS_SRC), file('src/order.test.ts', TS_TEST)]);
+    check('TypeScript: tests run (types stripped), pass and fail reported', res['basic total']?.outcome === 'passed' && res['gold is wrong on purpose']?.outcome === 'failed', JSON.stringify(res));
+    await nav.getByRole('button', { name: 'Code' }).click();
+    if (await p.getByTestId('file-select').count()) await p.getByTestId('file-select').selectOption({ label: 'src/order.ts' }).catch(() => {});
+    await p.locator('[data-line="9"]').waitFor({ timeout: 20000 });
+    check('TypeScript: per-line coverage works (the gold branch ran, so it is not dimmed)', !(await p.locator('[data-line="9"]').getAttribute('class')).includes('cov-miss'));
+    check('TypeScript: interface line gets no statement letter', (await p.locator('[data-line="1"] .letter').count()) === 0 || !(await p.locator('[data-line="1"] .letter').innerText()).trim());
+    await nav.getByRole('button', { name: 'Queue' }).click();
+    check('TypeScript: total is in the Queue', (await p.locator('[data-testid=queue-item][data-fn="total"]').count()) === 1);
+    await p.close();
+  }
+
+  // Package downloads and sharing use a second browser context, so their deliberate PyPI traffic (mocked) is kept
+  // apart from the "zero requests to any other origin" check on the normal page.
+  {
+    const ctx2 = await browser.newContext({ viewport: { width: 1000, height: 800 } });
+    const pypiHits = [];
+    const { createHash } = await import('crypto');
+    const TINY = Buffer.from(zipSync({ 'tinypkg/__init__.py': strToU8('def triple(x):\n    return 3 * x\n'), 'tinypkg-1.0.dist-info/METADATA': strToU8('Metadata-Version: 2.1\nName: tinypkg\nVersion: 1.0\n') }));
+    const TINY_FILE = 'tinypkg-1.0-py3-none-any.whl';
+    await ctx2.route('https://pypi.org/**', (r) => {
+      pypiHits.push(r.request().url());
+      if (/\/pypi\/tinypkg\/json$/.test(r.request().url())) return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ info: { version: '1.0' }, urls: [{ filename: TINY_FILE, url: `https://files.pythonhosted.org/packages/xx/${TINY_FILE}`, packagetype: 'bdist_wheel', size: TINY.length, digests: { sha256: createHash('sha256').update(TINY).digest('hex') } }] }) });
+      return r.fulfill({ status: 404, headers: { 'Access-Control-Allow-Origin': '*' }, body: 'no' });
+    });
+    await ctx2.route('https://files.pythonhosted.org/**', (r) => { pypiHits.push(r.request().url()); return r.fulfill({ status: 200, contentType: 'application/octet-stream', headers: { 'Access-Control-Allow-Origin': '*' }, body: TINY }); });
+    const p = await ctx2.newPage();
+    await p.goto(APP);
+    const blocked = await p.evaluate(() => fetch('https://pypi.org/pypi/tinypkg/json').then(() => 'reached', () => 'blocked'));
+    check('packages: the normal page cannot reach PyPI at all (CSP)', blocked === 'blocked' && pypiHits.length === 0, blocked);
+    await p.getByTestId('file-input').setInputFiles([file('calc.py', 'def double(x):\n    return 2 * x\n'), file('test_pkg.py', 'import tinypkg\nfrom calc import double\n\ndef test_triple():\n    assert tinypkg.triple(double(1)) == 6\n')]);
+    await p.getByRole('button', { name: 'Review this code' }).click();
+    const nav = p.locator('nav.inline');
+    await nav.getByRole('button', { name: 'Tests' }).click();
+    check('packages: off by default, panel closed until opened', /Package downloads:\s*off/.test(await p.getByTestId('packages').innerText()) && !(await p.getByTestId('packages').evaluate((d) => d.open)));
+    await p.getByTestId('packages').locator('summary').click();
+    check('packages: off, and the panel says nothing leaves the device', !(await p.getByTestId('packages-toggle').isChecked()) && /nothing leaves this device/.test(await p.getByTestId('packages').innerText()));
+    await p.getByTestId('packages-toggle').click(); // the page reloads as packages.html
+    await p.waitForURL(/packages\.html$/, { timeout: 15000 });
+    const csp2 = await p.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+    check('packages: turning it on reopens packages.html, whose policy adds only the two PyPI hosts', /connect-src 'self' https:\/\/pypi\.org https:\/\/files\.pythonhosted\.org;/.test(csp2) && (await p.getByTestId('packages-pill').isVisible()), csp2);
+    await nav.getByRole('button', { name: 'Tests' }).click();
+    check('packages: the loaded code came along across the switch', /Found about 1 test/.test(await p.locator('main').innerText()));
+    check('packages: nothing is sent just by turning it on', pypiHits.length === 0, pypiHits.join(', '));
+    await p.getByRole('button', { name: /^Run tests/ }).click();
+    const consent = p.getByRole('button', { name: 'Download Python support' });
+    await Promise.race([consent.waitFor({ timeout: 60000 }).then(() => consent.click()).catch(() => {}), p.getByTestId('test-summary').waitFor({ timeout: 60000 }).catch(() => {})]);
+    await p.getByTestId('test-summary').waitFor({ timeout: 180000 });
+    const first = await p.getByTestId('result').first().innerText();
+    check('packages: the missing package is named, with how to get it', /Missing package 'tinypkg'/.test(first) && /Package downloads are on/.test(first), first.slice(0, 300));
+    check('packages: the names box is prefilled from the missing import, nothing sent yet', (await p.getByTestId('packages-names').inputValue()) === 'tinypkg' && pypiHits.length === 0);
+    await p.getByTestId('packages-download').click();
+    await p.getByTestId('packages-log').waitFor({ timeout: 30000 });
+    const log = await p.getByTestId('packages-log').innerText();
+    check('packages: download checks the sha256 and only asks PyPI about the confirmed name', /tinypkg 1\.0: ready/.test(log) && /sha256 checked/.test(log) && pypiHits.length === 2 && pypiHits.every((u) => /tinypkg/.test(u)), log + ' | ' + pypiHits.join(', '));
+    await p.getByRole('button', { name: /^Run tests again/ }).click();
+    await p.waitForFunction(() => document.querySelector('[data-testid=result]')?.getAttribute('data-outcome') === 'passed', null, { timeout: 120000 }).catch(() => {});
+    check('packages: with the downloaded wheel, the test passes', (await p.getByTestId('result').first().getAttribute('data-outcome')) === 'passed', await p.getByTestId('result').first().innerText());
+    await p.getByTestId('packages').locator('summary').isVisible(); await p.getByTestId('packages-toggle').click();
+    await p.waitForURL((u) => !u.pathname.endsWith('packages.html'), { timeout: 15000 });
+    const csp3 = await p.locator('meta[http-equiv="Content-Security-Policy"]').getAttribute('content');
+    check('packages: unticking goes back to the strict page', csp3.includes("connect-src 'self';") && (await p.getByTestId('packages-pill').count()) === 0);
+
+    // Share to Lynceus: post to ./share through the service worker, as the phone's share sheet would.
+    await p.evaluate(() => navigator.serviceWorker.ready);
+    await p.goto(APP);
+    await p.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 15000 });
+    const posted = await p.evaluate(async () => {
+      const fd = new FormData();
+      fd.append('title', 'shared.py'); fd.append('text', 'def shared():\n    return 42\n');
+      fd.append('files', new File(['export const s = 1;\n'], 'extra.js', { type: 'text/javascript' }));
+      fd.append('files', new File([new Uint8Array([137, 80])], 'photo.png', { type: 'image/png' }));
+      // redirect: 'manual' so the 303 itself is visible (a real share is a navigation, which follows it)
+      const r = await fetch('./share', { method: 'POST', body: fd, redirect: 'manual' });
+      return { type: r.type, status: r.status, cached: (await caches.keys()).includes('lynceus-share') };
+    });
+    check('share: the service worker stores the share and redirects to ?shared=1', (posted.type === 'opaqueredirect' || posted.status === 303) && posted.cached, JSON.stringify(posted));
+    await p.goto(APP + '?shared=1');
+    await p.locator('#paste').waitFor();
+    await p.waitForFunction(() => document.querySelector('#paste')?.value.includes('return 42'), null, { timeout: 10000 }).catch(() => {});
+    const pending = await p.getByTestId('pending').innerText().catch(() => '');
+    const notice = await p.locator('main').innerText();
+    check('share: text goes in the paste box, code files are added, others listed with a reason', (await p.locator('#paste').inputValue()).includes('return 42') && /extra\.js/.test(pending) && /photo\.png/.test(notice) && /From your share/.test(notice), pending + ' | ' + notice.slice(0, 300));
+    const after = await p.evaluate(async () => ({ q: location.search, cached: (await caches.keys()).includes('lynceus-share') }));
+    check('share: the shared copy is deleted at once and ?shared leaves the address bar', after.q === '' && !after.cached, JSON.stringify(after));
+    await ctx2.close();
   }
 
   // ---- phone width, both themes: no horizontal scroll

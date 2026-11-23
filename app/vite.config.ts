@@ -35,12 +35,22 @@ export const CSP = [
   "form-action 'none'",
 ].join('; ');
 
+// packages.html: the same app with package downloads allowed (src/lib/packages.ts). Only connect-src changes,
+// and only to add PyPI's two hosts. index.html (the default, and the installed app's start page) stays strict.
+export const CSP_PACKAGES = CSP.replace("connect-src 'self'", "connect-src 'self' https://pypi.org https://files.pythonhosted.org");
+
 function cspMeta(): Plugin {
   return {
     name: 'lynceus-csp',
     apply: 'build',
     transformIndexHtml: (html) =>
       html.replace('<!--CSP-->', `<meta http-equiv="Content-Security-Policy" content="${CSP}">`),
+    writeBundle(opts) {
+      const dir = opts.dir ?? path.resolve('dist');
+      const html = fs.readFileSync(path.join(dir, 'index.html'), 'utf8');
+      if (!html.includes(CSP)) throw new Error('lynceus-csp: index.html has no CSP to copy');
+      fs.writeFileSync(path.join(dir, 'packages.html'), html.replace(CSP, CSP_PACKAGES).replace('<title>', '<title>(package downloads on) '));
+    },
   };
 }
 

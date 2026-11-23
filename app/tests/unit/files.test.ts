@@ -36,7 +36,7 @@ describe('readZip', () => {
   });
   it('reports every skipped file with a reason (never silent)', () => {
     const reasons = Object.fromEntries(r.skipped.map((s) => [s.path, s.reason]));
-    expect(reasons['proj/README.md']).toMatch(/not a Python or JavaScript/);
+    expect(reasons['proj/README.md']).toMatch(/not a Python, JavaScript or TypeScript/);
     expect(reasons['proj/node_modules/x/index.js']).toMatch(/node_modules/);
     expect(reasons['proj/img.js']).toMatch(/binary/);
     expect(reasons['__MACOSX/proj/._calc.py']).toMatch(/__MACOSX/);

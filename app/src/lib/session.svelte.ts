@@ -6,6 +6,9 @@ import type { Analysis, Role } from '../analysis/model';
 import { analyze, pyodideCached, stop as stopWorker } from '../analysis/client';
 import { runTests as runSandbox, stopTests, type Progress, type RunOutcome } from '../sandbox/client';
 import { detectTests } from '../sandbox/detect-tests';
+import { packagesMode, takeCarried, type FetchedWheel, type PackageLog } from './packages';
+import { takeShared, clearShared } from './share';
+import { mergeFiles } from './files';
 
 export type Tab = 'input' | 'queue' | 'code' | 'tests' | 'report';
 
@@ -52,6 +55,11 @@ export const app = $state({
   lensFn: null as string | null,
   revealed: {} as Record<string, boolean>,   // "path:line:col" of a secret the reviewer chose to show
   reportExcerpts: false,
+  // Phase 7: packages downloaded from PyPI this session (packages mode only; memory only, never persisted)
+  extraWheels: [] as FetchedWheel[],
+  packageLog: [] as PackageLog[],
+  packageStatus: 'idle' as 'idle' | 'fetching' | 'done',
+  packageMsg: '',
 });
 
 /** Marks a function reviewed (or not) and/or sets its one-line note. */
@@ -100,7 +108,7 @@ export async function runTests(opts: { allowPython?: boolean } = {}): Promise<vo
   try {
     const r = await runSandbox($state.snapshot(ws.files) as typeof ws.files, {
       testMs: app.settings.testTimeoutSec * 1000, runMs: app.settings.runTimeoutSec * 1000,
-    }, (p) => { if (app.workspace === ws) app.testProgress = p; }, langs);
+    }, (p) => { if (app.workspace === ws) app.testProgress = p; }, langs, { extraWheels: $state.snapshot(app.extraWheels) as FetchedWheel[], packagesMode: packagesMode() });
     if (app.workspace !== ws) return; // cleared or replaced meanwhile
     if (hasPy && !allowPython) r.notes.unshift('Python tests were not run: Python support was not downloaded.');
     app.testRun = r;
@@ -185,9 +193,23 @@ function snapshot(): Workspace | null {
 }
 
 export async function restoreIfRemembered(): Promise<void> {
+  // Carried over a package-downloads switch (sessionStorage, read once and deleted straight away)
+  const carried = takeCarried();
+  if (carried) { app.workspace = carried; app.notice = packagesMode() ? 'Package downloads are on. Your loaded code came with you.' : 'Package downloads are off. Your loaded code came with you.'; void runAnalysis(); if (app.settings.remember) await saveSession(snapshot()); return; }
   if (!app.settings.remember) { await clearSession(); return; } // belt and braces: never leave stale data
   const ws = await loadSession();
   if (ws) { app.workspace = ws; app.notice = 'Restored your remembered session on this device.'; void runAnalysis(); }
+}
+
+/** "Share to Lynceus": puts shared text and files on the Input tab (not loaded until the reviewer presses Review). */
+export async function receiveShare(): Promise<void> {
+  const r = await takeShared();
+  if (!r) return;
+  if (r.pasteText) { app.pasteText = r.pasteText; app.pasteName = r.pasteName; app.pasteLang = 'auto'; }
+  if (r.files.length) app.pending = mergeFiles(app.pending, r.files);
+  if (r.skipped.length) app.pendingSkipped = [...app.pendingSkipped, ...r.skipped];
+  app.tab = 'input';
+  app.notice = r.notice;
 }
 
 /** "Clear everything": wipes memory and storage, turns Remember off. Theme is kept. */
@@ -196,10 +218,12 @@ export async function clearEverything(): Promise<void> {
   app.testsText = ''; app.diffText = ''; app.specText = '';
   app.pending = []; app.pendingSkipped = [];
   app.workspace = null;
+  app.extraWheels = []; app.packageLog = []; app.packageStatus = 'idle'; app.packageMsg = '';
   resetAnalysis();
   app.pyConsent = false;
   setSettings({ remember: false });
   await clearSession();
+  await clearShared();
   try { sessionStorage.clear(); } catch { /* ignore */ }
   app.tab = 'input';
   app.notice = 'Cleared. Nothing from this session is left on this device.';

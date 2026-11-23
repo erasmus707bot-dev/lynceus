@@ -12,6 +12,7 @@ export interface PyHostDeps {
   readWheel: (name: string) => Promise<Uint8Array>;  // same-origin fetch in the browser, disk in Node
   beforeUserCode?: () => void;                       // the worker locks the JS network here
   guard?: string; runner?: string;                   // Node tests pass the sources (no ?raw there)
+  extraWheels?: { file: string; data: Uint8Array }[]; // downloaded from PyPI by the page (packages mode)
 }
 
 const PROJ = '/home/pyodide/proj';
@@ -23,11 +24,17 @@ export async function installWheels(py: Pyodide, deps: PyHostDeps): Promise<void
     py.FS.writeFile('/tmp/' + w, buf);
     py.runPython(`import zipfile; zipfile.ZipFile(${JSON.stringify('/tmp/' + w)}).extractall(${JSON.stringify(site)})`);
   }
+  // Packages the reviewer chose to download from PyPI (sha256-checked by the page before they got here).
+  for (const w of deps.extraWheels ?? []) {
+    const safe = w.file.replace(/[^\w.+-]/g, '_');
+    py.FS.writeFile('/tmp/' + safe, w.data);
+    py.runPython(`import zipfile; zipfile.ZipFile(${JSON.stringify('/tmp/' + safe)}).extractall(${JSON.stringify(site)})`);
+  }
 }
 
 export async function runPython(py: Pyodide, input: RunInput, emit: (ev: WorkerEvent) => void, deps: PyHostDeps): Promise<void> {
-  emit({ type: 'status', msg: 'Installing pytest and coverage…' });
-  await installWheels(py, deps);
+  emit({ type: 'status', msg: input.extraWheels?.length ? `Installing pytest, coverage and ${input.extraWheels.length} downloaded package(s)…` : 'Installing pytest and coverage…' });
+  await installWheels(py, { ...deps, extraWheels: deps.extraWheels ?? input.extraWheels });
   for (const f of input.files) {
     const full = `${PROJ}/${f.path}`;
     py.FS.mkdirTree(full.slice(0, full.lastIndexOf('/')));
@@ -47,7 +54,7 @@ export async function runPython(py: Pyodide, input: RunInput, emit: (ev: WorkerE
     },
   });
   py.runPython((deps.guard ?? GUARD) + '\n' + (deps.runner ?? RUNNER));
-  py.globals.set('LYNCEUS_CFG', JSON.stringify({ proj: PROJ, nonce, skip: input.skip, testFiles: input.testFiles }));
+  py.globals.set('LYNCEUS_CFG', JSON.stringify({ proj: PROJ, nonce, skip: input.skip, testFiles: input.testFiles, packagesMode: !!input.packagesMode }));
   emit({ type: 'status', msg: 'Running Python tests…' });
   deps.beforeUserCode?.();
   await py.runPythonAsync('lynceus_run(LYNCEUS_CFG)');

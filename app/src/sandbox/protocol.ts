@@ -21,6 +21,8 @@ export interface RunInput {
   testFiles: string[];     // paths that hold tests (by name pattern or inline test functions)
   skip: string[];          // test ids not to run again (they hung or crashed the sandbox)
   pyodideURL: string;      // self-hosted Pyodide folder (Python only)
+  extraWheels?: { file: string; data: Uint8Array }[]; // Python packages the reviewer downloaded from PyPI (packages mode only)
+  packagesMode?: boolean;  // the page allows package downloads (changes the missing-package message)
 }
 
 export type WorkerEvent =
@@ -31,4 +33,4 @@ export type WorkerEvent =
   | { type: 'done'; coverage: Record<string, FileCoverage>; notes: string[] }
   | { type: 'fatal'; msg: string };
 
-export const MISSING_PKG_NOTE = 'Package downloads are off in v1, so only your uploaded files and the standard library are available.';
+export const MISSING_PKG_NOTE = 'JavaScript has no package downloads (only the Python side can fetch from PyPI).';

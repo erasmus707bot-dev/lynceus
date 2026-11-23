@@ -1,6 +1,8 @@
 <script lang="ts">
   import { app, setSettings, clearEverything } from '../lib/session.svelte';
   import TabBar from './TabBar.svelte';
+  import { packagesMode } from '../lib/packages';
+  const pkgOn = packagesMode();
   const dark = $derived(app.settings.theme === 'dark');
 </script>
 
@@ -9,6 +11,9 @@
     <span class="brand">Lynceus</span>
     {#if app.settings.remember}
       <span class="pill" role="status" title="Your session is being saved on this device">● Remembering</span>
+    {/if}
+    {#if pkgOn}
+      <button class="pill" onclick={() => { app.tab = 'tests'; }} title="This page may contact PyPI when you ask it to download packages" data-testid="packages-pill">● Package downloads on</button>
     {/if}
     <div class="grow"></div>
     <div class="wide-tabs"><TabBar inline /></div>

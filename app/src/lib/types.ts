@@ -1,6 +1,7 @@
 // Shared input model. Later phases add analysis results on top of this.
 export type Lang = 'python' | 'javascript';
-export type LangChoice = Lang | 'auto';
+/** 'typescript' is a paste-box choice only: the file gets a .ts name and is reviewed by the JavaScript adapter. */
+export type LangChoice = Lang | 'typescript' | 'auto';
 
 export interface SourceFile {
   path: string;          // folder structure preserved, '/'-separated, no leading slash

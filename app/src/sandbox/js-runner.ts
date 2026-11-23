@@ -9,13 +9,17 @@ import { createInstrumenter } from 'istanbul-lib-instrument';
 import { transformSync } from '@babel/core';
 // @ts-expect-error: the plugin ships no types
 import cjsPluginMod from '@babel/plugin-transform-modules-commonjs';
+// @ts-expect-error: the plugin ships no types
+import tsPluginMod from '@babel/plugin-transform-typescript';
+import { isTsPath, moduleCandidates } from '../analysis/ts';
 import { makeExpect, jestStub, UnsupportedError, fmt } from './expect';
 import { MISSING_PKG_NOTE, type FileCoverage, type RunInput, type TestInfo, type TestResult, type WorkerEvent } from './protocol';
 
 // The plugin is CommonJS; depending on the bundler its function arrives as the module or as .default.
 const cjsPlugin = (cjsPluginMod as { default?: unknown }).default ?? cjsPluginMod;
+const tsPlugin = (tsPluginMod as { default?: unknown }).default ?? tsPluginMod;
 
-const TEST_PATTERN = /\.(test|spec)\.[cm]?jsx?$/;
+const TEST_PATTERN = /\.(test|spec)\.[cm]?[jt]sx?$/;
 const NODE_BUILTINS = new Set(['assert', 'buffer', 'child_process', 'cluster', 'crypto', 'dgram', 'dns', 'events', 'fs', 'fs/promises',
   'http', 'http2', 'https', 'net', 'os', 'path', 'perf_hooks', 'process', 'readline', 'stream', 'timers', 'tls', 'tty', 'url', 'util',
   'v8', 'vm', 'worker_threads', 'zlib', 'test']);
@@ -27,11 +31,16 @@ const tail = (s: string, n = 2000) => (s.length > n ? '…' + s.slice(-n) : s);
 /** True when the source uses import/export syntax (checked cheaply; Babel decides for real). */
 const looksESM = (src: string) => /^\s*(import\s*[\w{*'"]|export\s)/m.test(src);
 
+/** ESM → CommonJS, and for TypeScript files types stripped first (line numbers kept, so coverage maps to the source). */
 export function toCommonJS(src: string, filename: string): string {
-  if (!looksESM(src)) return src;
+  const ts = isTsPath(filename);
+  if (!ts && !looksESM(src)) return src;
+  const plugins: unknown[] = [];
+  if (ts) plugins.push([tsPlugin, { isTSX: /\.tsx$/i.test(filename), allowDeclareFields: true, onlyRemoveTypeImports: false }]);
+  if (looksESM(src)) plugins.push([cjsPlugin, { loose: true }]);
   const out = transformSync(src, {
     filename, babelrc: false, configFile: false, sourceType: 'unambiguous', retainLines: true, compact: false,
-    plugins: [[cjsPlugin, { loose: true }]], ast: false, code: true,
+    plugins, ast: false, code: true,
   });
   return out?.code ?? src;
 }
@@ -96,7 +105,8 @@ async function runJsInner(input: RunInput, emit: (ev: WorkerEvent) => void, opts
   const prepError = new Map<string, string>();
   const statementLines: Record<string, number[]> = {};
   for (const [p, src] of files) {
-    if (!/\.[cm]?jsx?$/.test(p) && !p.endsWith('.json')) continue;
+    if (!/\.[cm]?[jt]sx?$/.test(p) && !p.endsWith('.json')) continue;
+    if (/\.d\.ts$/i.test(p)) continue; // declaration files hold types only
     if (p.endsWith('.json')) { code.set(p, src); continue; }
     try {
       const cjs = toCommonJS(src, p);
@@ -116,7 +126,7 @@ async function runJsInner(input: RunInput, emit: (ev: WorkerEvent) => void, opts
     if (spec.startsWith('node:') || NODE_BUILTINS.has(bare)) throw new Unsupported(`Node built-in "${spec}" isn't available in Lynceus's browser sandbox.`);
     if (!spec.startsWith('.') && !spec.startsWith('/')) throw new Unsupported(`Package "${spec}" isn't available. Lynceus runs only your uploaded files. ${MISSING_PKG_NOTE}`);
     const base = norm(spec.startsWith('/') ? spec : dirname(from) + '/' + spec);
-    for (const c of [base, base + '.js', base + '.mjs', base + '.cjs', base + '.json', base + '/index.js']) if (code.has(c) || prepError.has(c)) return c;
+    for (const c of moduleCandidates(base)) if (code.has(c) || prepError.has(c)) return c;
     throw new Error(`Cannot find module "${spec}" (required from ${from.slice(1)})`);
   };
   const requireFrom = (from: string) => (spec: string): unknown => {

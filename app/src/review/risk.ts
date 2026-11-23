@@ -6,6 +6,7 @@
 //   effects     value = clamp(sideEffectLines / 8)          lines whose role is mutation, I/O or unknown call
 //   uncovered   value = notRunStatements / statementsWithCoverage   (only when tests ran)
 //   diff        value = 1 if any of its lines changed, else 0      (only when a diff was supplied)
+//   failing     value = 1 if a failing test ran any of its lines, else 0   (only when tests ran; added 2026-11-22)
 // A factor with no evidence (no tests run, no diff supplied) is left out, and the remaining weights
 // are scaled up proportionally so they still add to 100. Without tests the score is marked "no test evidence".
 import type { Analysis, FunctionInfo, Statement } from '../analysis/model';
@@ -13,12 +14,14 @@ import type { FileCoverage } from '../sandbox/protocol';
 import { lineCoverage } from '../sandbox/coverage';
 import type { DiffResult } from './diff';
 
-export type FactorKey = 'complexity' | 'nesting' | 'effects' | 'uncovered' | 'diff';
+export type FactorKey = 'complexity' | 'nesting' | 'effects' | 'uncovered' | 'diff' | 'failing';
 export type Weights = Record<FactorKey, number>;
-export const DEFAULT_WEIGHTS: Weights = { complexity: 30, nesting: 20, effects: 20, uncovered: 20, diff: 10 };
-export const FACTOR_ORDER: FactorKey[] = ['complexity', 'nesting', 'effects', 'uncovered', 'diff'];
+export const DEFAULT_WEIGHTS: Weights = { complexity: 25, nesting: 15, effects: 15, uncovered: 15, diff: 10, failing: 20 };
+/** The defaults before the failing-test factor existed (Phase 4–6); saved weights equal to these move to the new defaults. */
+export const OLD_DEFAULT_WEIGHTS = { complexity: 30, nesting: 20, effects: 20, uncovered: 20, diff: 10 };
+export const FACTOR_ORDER: FactorKey[] = ['complexity', 'nesting', 'effects', 'uncovered', 'diff', 'failing'];
 export const FACTOR_LABEL: Record<FactorKey, string> = {
-  complexity: 'Cyclomatic complexity', nesting: 'Max nesting depth', effects: 'Side-effect lines', uncovered: 'Uncovered lines', diff: 'In the diff',
+  complexity: 'Cyclomatic complexity', nesting: 'Max nesting depth', effects: 'Side-effect lines', uncovered: 'Uncovered lines', diff: 'In the diff', failing: 'Ran during a failing test',
 };
 export const FACTOR_SCALE: Record<FactorKey, string> = {
   complexity: '(complexity − 1) ÷ 10, capped at 1',
@@ -26,6 +29,7 @@ export const FACTOR_SCALE: Record<FactorKey, string> = {
   effects: 'lines ÷ 8, capped at 1',
   uncovered: 'statements not run ÷ statements',
   diff: '1 if any line changed, else 0',
+  failing: '1 if a failing test ran any of its lines, else 0',
 };
 
 export interface Factor {
@@ -57,7 +61,15 @@ export function ownStatements(fn: FunctionInfo, statements: Statement[]): Statem
   return statements.filter((s) => s.fn === fn.id);
 }
 
-export function scoreFunctions(analysis: Analysis | null, coverage: Record<string, FileCoverage> | null, diff: DiffResult | null, weights: Weights = DEFAULT_WEIGHTS): FunctionRisk[] {
+/** Outcomes that count as "failing" for the risk factor: the code under test misbehaved. 'error' (could not run) and 'skipped' do not. */
+export const FAILING_OUTCOMES = ['failed', 'timeout', 'crashed'];
+
+/**
+ * failing: test id -> test name, for every test whose outcome is in FAILING_OUTCOMES (null when no tests ran).
+ * A function "ran during a failing test" when that test's coverage context includes one of its own statement lines.
+ * It shows the function ran, not that it caused the failure.
+ */
+export function scoreFunctions(analysis: Analysis | null, coverage: Record<string, FileCoverage> | null, diff: DiffResult | null, weights: Weights = DEFAULT_WEIGHTS, failing: Map<string, string> | null = null): FunctionRisk[] {
   if (!analysis) return [];
   const out: FunctionRisk[] = [];
   for (const fa of analysis.files) {
@@ -74,6 +86,8 @@ export function scoreFunctions(analysis: Analysis | null, coverage: Record<strin
       const notRun = withCov.filter((x) => x!.state === 'miss').length;
       const hasCov = !!cov && withCov.length > 0;
       const inDiff = [...changedLines].some((l) => l >= fn.span.line && l <= fn.span.endLine);
+      const failedHere = new Set<string>();
+      if (failing && hasCov) for (const l of ownLines) for (const t of lineCoverage(cov, l)?.tests ?? []) if (failing.has(t)) failedHere.add(failing.get(t)!);
       const raw: Record<FactorKey, { active: boolean; value: number; raw: string; note?: string }> = {
         complexity: { active: true, value: clamp((cc - 1) / 10), raw: `complexity ${cc}` },
         nesting: { active: true, value: clamp(depth / 5), raw: `max depth ${depth}` },
@@ -84,6 +98,9 @@ export function scoreFunctions(analysis: Analysis | null, coverage: Record<strin
         diff: diff?.supplied
           ? { active: true, value: inDiff ? 1 : 0, raw: inDiff ? 'changed in the diff' : 'not changed in the diff' }
           : { active: false, value: 0, raw: 'no diff supplied', note: 'No diff was pasted, so this weight is shared out over the other factors.' },
+        failing: hasCov && failing
+          ? { active: true, value: failedHere.size ? 1 : 0, raw: failedHere.size ? `ran during ${failedHere.size} failing test${failedHere.size === 1 ? '' : 's'}: ${[...failedHere].slice(0, 3).join(', ')}${failedHere.size > 3 ? ', …' : ''}` : 'no failing test ran it' }
+          : { active: false, value: 0, raw: 'no test evidence', note: coverage ? 'Tests ran, but none of them produced coverage for this file.' : 'No tests have been run, so this weight is shared out over the other factors.' },
       };
       const activeSum = FACTOR_ORDER.reduce((n, k) => n + (raw[k].active ? Math.max(0, weights[k]) : 0), 0);
       const factors: Factor[] = FACTOR_ORDER.map((k) => {
@@ -100,7 +117,12 @@ export function scoreFunctions(analysis: Analysis | null, coverage: Record<strin
 
 export function validWeights(w: unknown): Weights | null {
   if (!w || typeof w !== 'object') return null;
-  const o = w as Record<string, unknown>;
+  const o = { ...(w as Record<string, unknown>) };
+  // Saved before the failing-test factor existed: the old defaults become the new defaults; custom weights keep their values and get failing 20.
+  if (o.failing === undefined) {
+    if ((Object.keys(OLD_DEFAULT_WEIGHTS) as (keyof typeof OLD_DEFAULT_WEIGHTS)[]).every((k) => Number(o[k]) === OLD_DEFAULT_WEIGHTS[k])) return { ...DEFAULT_WEIGHTS };
+    o.failing = DEFAULT_WEIGHTS.failing;
+  }
   const r = {} as Weights;
   for (const k of FACTOR_ORDER) {
     const v = Number(o[k]);

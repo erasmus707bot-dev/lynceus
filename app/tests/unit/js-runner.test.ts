@@ -59,7 +59,7 @@ describe('calc', () => {
     }, ['a.test.js']);
     expect(results['uses fs'].outcome).toBe('error');
     expect(results['uses fs'].message).toMatch(/Node built-in "fs" isn't available/);
-    expect(results['uses lodash'].message).toMatch(/Package "lodash" isn't available.*Package downloads are off/);
+    expect(results['uses lodash'].message).toMatch(/Package "lodash" isn't available.*JavaScript has no package downloads/);
     expect(results['ok'].outcome).toBe('passed');
   });
 

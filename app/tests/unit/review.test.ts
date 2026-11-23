@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { JsAnalyzer } from '../../src/analysis/js/adapter';
 import { makeFile } from '../../src/lib/files';
 import { applyDiff } from '../../src/review/diff';
-import { scoreFunctions, DEFAULT_WEIGHTS } from '../../src/review/risk';
+import { scoreFunctions, DEFAULT_WEIGHTS, validWeights } from '../../src/review/risk';
 import { buildGraph } from '../../src/review/callgraph';
 import { parseSpec, suggest, words } from '../../src/review/spec';
 import { scaffolding } from '../../src/review/scaffolding';
@@ -35,12 +35,13 @@ describe('risk score (hand-computed)', () => {
     const busy = r.find((x) => x.fn.name === 'busy')!;
     // busy: complexity = 1 + for + if + && + while + if = 6 → (6-1)/10 = 0.5
     //       depth 4 → 0.8;  side-effect lines: log.write (I/O, heuristic), it.retry-- (mutation), save(n) (unknown) = 3 → 3/8 = 0.375
-    //       active weights 30+20+20 = 70 → scaled: 42.86, 28.57, 28.57
-    //       score = 42.857*0.5 + 28.571*0.8 + 28.571*0.375 = 21.43 + 22.86 + 10.71 = 55
-    expect(busy.factors.find((f) => f.key === 'complexity')).toMatchObject({ raw: 'complexity 6', value: 0.5, weight: 42.9 });
+    //       active weights 25+15+15 = 55 → scaled: 45.45, 27.27, 27.27
+    //       score = 45.455*0.5 + 27.273*0.8 + 27.273*0.375 = 22.73 + 21.82 + 10.23 = 54.77 → 55
+    expect(busy.factors.find((f) => f.key === 'complexity')).toMatchObject({ raw: 'complexity 6', value: 0.5, weight: 45.5 });
     expect(busy.factors.find((f) => f.key === 'nesting')).toMatchObject({ raw: 'max depth 4', value: 0.8 });
     expect(busy.factors.find((f) => f.key === 'effects')).toMatchObject({ raw: '3 side-effect lines', value: 0.375 });
     expect(busy.factors.find((f) => f.key === 'uncovered')).toMatchObject({ active: false, weight: 0, raw: 'no test evidence' });
+    expect(busy.factors.find((f) => f.key === 'failing')).toMatchObject({ active: false, weight: 0 });
     expect(busy.score).toBe(55);
     expect(busy.noTestEvidence).toBe(true);
     expect(r[0].fn.name).toBe('busy');
@@ -48,19 +49,33 @@ describe('risk score (hand-computed)', () => {
     expect(tiny.score).toBe(0);
   });
 
-  it('with coverage and a diff: all five factors, default weights unchanged', () => {
+  it('with coverage and a diff (no failing-test list): five factors, weights scaled from 80 to 100', () => {
     const cov = { 'a.js': { statements: [2, 5, 6, 7, 8, 9, 10, 11, 16, 17], lines: { 2: ['t'], 5: ['t'], 6: ['t'], 7: ['t'], 16: ['t'], 17: ['t'] } as Record<number, string[]> } };
     const diff = applyDiff(`--- a/a.js\n+++ b/a.js\n@@ -16,2 +16,2 @@\n-  keep(n);\n+  save(n);\n   return tiny(n);\n`, [{ path: 'a.js', text: SRC }]);
     expect(diff.problems).toEqual([]);
     expect(diff.changed['a.js']).toEqual([16]);
     const busy = scoreFunctions(analysis(), cov, diff).find((x) => x.fn.name === 'busy')!;
     // own statement lines: 5,6,7,8,9,10,11,16,17 → 9 with coverage, not run: 8,9,10,11 = 4 → 4/9 = 0.444
-    // score = 30*0.5 + 20*0.8 + 20*0.375 + 20*0.4444 + 10*1 = 15 + 16 + 7.5 + 8.89 + 10 = 57.39 → 57
-    expect(busy.factors.find((f) => f.key === 'uncovered')).toMatchObject({ active: true, raw: '4 of 9 statements not run', weight: 20 });
+    // active 25+15+15+15+10 = 80 → ×1.25: 31.25, 18.75, 18.75, 18.75, 12.5
+    // score = 31.25*0.5 + 18.75*0.8 + 18.75*0.375 + 18.75*0.4444 + 12.5*1 = 15.63 + 15 + 7.03 + 8.33 + 12.5 = 58.49 → 58
+    expect(busy.factors.find((f) => f.key === 'uncovered')).toMatchObject({ active: true, raw: '4 of 9 statements not run', weight: 18.8 });
     expect(busy.factors.find((f) => f.key === 'diff')).toMatchObject({ active: true, value: 1, raw: 'changed in the diff' });
-    expect(busy.score).toBe(57);
+    expect(busy.score).toBe(58);
     expect(busy.changed).toBe(true);
     expect(busy.noTestEvidence).toBe(false);
+    // Test 't' failed: busy ran during it → all six factors at their default weights:
+    // 25*0.5 + 15*0.8 + 15*0.375 + 15*0.4444 + 10*1 + 20*1 = 12.5 + 12 + 5.63 + 6.67 + 10 + 20 = 66.79 → 67
+    const withFail = scoreFunctions(analysis(), cov, diff, DEFAULT_WEIGHTS, new Map([['t', 'the test']])).find((x) => x.fn.name === 'busy')!;
+    expect(withFail.factors.find((f) => f.key === 'failing')).toMatchObject({ active: true, value: 1, weight: 20, raw: 'ran during 1 failing test: the test' });
+    expect(withFail.score).toBe(67);
+    // A failing test that never touched it: active, value 0
+    const notHere = scoreFunctions(analysis(), cov, diff, DEFAULT_WEIGHTS, new Map([['other', 'x']])).find((x) => x.fn.name === 'busy')!;
+    expect(notHere.factors.find((f) => f.key === 'failing')).toMatchObject({ active: true, value: 0, raw: 'no failing test ran it' });
+  });
+
+  it('saved weights from before the failing factor migrate', () => {
+    expect(validWeights({ complexity: 30, nesting: 20, effects: 20, uncovered: 20, diff: 10 })).toEqual(DEFAULT_WEIGHTS);
+    expect(validWeights({ complexity: 50, nesting: 20, effects: 20, uncovered: 20, diff: 10 })).toEqual({ complexity: 50, nesting: 20, effects: 20, uncovered: 20, diff: 10, failing: 20 });
   });
 
   it('custom weights are honoured and normalised', () => {

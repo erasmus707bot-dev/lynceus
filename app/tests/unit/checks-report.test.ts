@@ -82,7 +82,7 @@ describe('report (acceptance #12: secrets masked, no code unless opted in)', () 
 export function unusedHelper() { return 1; }`;
   const files = [file('pay.js', src)];
   const { analysis, checks, testPaths } = setup(files);
-  const risks = scoreFunctions(analysis, null, null, { complexity: 30, nesting: 20, effects: 20, uncovered: 20, diff: 10 });
+  const risks = scoreFunctions(analysis, null, null, { complexity: 30, nesting: 20, effects: 20, uncovered: 20, diff: 10, failing: 20 });
   const ws: Workspace = { files, skipped: [], diff: '', spec: '- Charge the card\n', loadedAt: 0 } as Workspace;
   const base = { workspace: ws, analysis, testRun: null, risks, checks, reviews: { [risks[0].id]: { done: true, note: 'checked the retry' } },
     progress: { pct: 50, done: 1, total: 2, weighted: true }, spec: [{ id: 's0', text: 'Charge the card', line: 1 }], links: [], testPaths, generatedAt: new Date(0) };

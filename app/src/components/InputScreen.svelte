@@ -1,7 +1,8 @@
 <script lang="ts">
   import { app, persist, setRemember, runAnalysis, resetTests } from '../lib/session.svelte';
   import { filesFromDrop, hasFiles, type Named } from '../lib/drop';
-  import { acceptBytes, makeFile, mergeFiles, pastedName, readZip } from '../lib/files';
+  import { acceptBytes, makeFile, mergeFiles, pastedName, readZip, langLabel } from '../lib/files';
+  import { looksTypeScript } from '../analysis/ts';
   import { guessLang } from '../lib/detect';
   import { checkLimits } from '../lib/limits';
   import type { SourceFile } from '../lib/types';
@@ -15,12 +16,13 @@
   function draftFiles(): SourceFile[] {
     let files = [...app.pending];
     if (app.pasteText.trim()) {
-      const lang = app.pasteLang === 'auto' ? (guess?.lang ?? 'python') : app.pasteLang;
+      const lang = app.pasteLang === 'auto' ? (guess?.lang === 'javascript' && looksTypeScript(app.pasteText) ? 'typescript' : guess?.lang ?? 'python') : app.pasteLang;
       const name = app.pasteName.trim() || pastedName(lang, 'code');
       files = mergeFiles(files, [makeFile(name, app.pasteText, app.pasteLang)]);
     }
     if (app.testsText.trim()) {
-      const lang = guessLang(app.testsText).lang;
+      const g = guessLang(app.testsText).lang;
+      const lang = g === 'javascript' && looksTypeScript(app.testsText) ? 'typescript' : g;
       files = mergeFiles(files, [makeFile(pastedName(lang, 'tests'), app.testsText)]);
     }
     return files;
@@ -125,19 +127,20 @@
       ondragenter={() => (dragOverPaste = true)} ondragleave={() => (dragOverPaste = false)}></textarea>
       <div class="grid2">
         <label>File name (optional)
-          <input type="text" bind:value={app.pasteName} placeholder={pastedName(guess?.lang ?? 'python', 'code')} autocapitalize="off" spellcheck="false" />
+          <input type="text" bind:value={app.pasteName} placeholder={pastedName(app.pasteLang === 'typescript' ? 'typescript' : guess?.lang ?? 'python', 'code')} autocapitalize="off" spellcheck="false" />
         </label>
         <label>Language
           <select bind:value={app.pasteLang}>
             <option value="auto">Auto-detect</option>
             <option value="python">Python</option>
             <option value="javascript">JavaScript</option>
+            <option value="typescript">TypeScript</option>
           </select>
         </label>
       </div>
       {#if guess && app.pasteLang === 'auto'}
         <p class="muted small" data-testid="guess">
-          Looks like <strong>{guess.lang === 'python' ? 'Python' : 'JavaScript'}</strong>
+          Looks like <strong>{guess.lang === 'python' ? 'Python' : looksTypeScript(app.pasteText) ? 'TypeScript' : 'JavaScript'}</strong>
           <span class="tag">heuristic</span>{guess.confident ? '' : ' (not sure: set it by hand if wrong)'}
         </p>
       {/if}
@@ -169,14 +172,14 @@
     <p class="muted small">Or drag files, a whole folder, or a .zip onto this page.</p>
       <label class="btn upload">
         {reading ? 'Reading…' : 'Choose files'}
-        <input type="file" multiple accept=".py,.js,.mjs,.cjs,.jsx,.zip,application/zip" onchange={onFiles} class="sr-only" data-testid="file-input" />
+        <input type="file" multiple accept=".py,.js,.mjs,.cjs,.jsx,.ts,.tsx,.mts,.cts,.zip,application/zip" onchange={onFiles} class="sr-only" data-testid="file-input" />
       </label>
       {#if app.pending.length}
         <ul class="files" data-testid="pending">
           {#each app.pending as f (f.path)}
             <li>
               <span class="path">{f.path}</span>
-              <span class="meta">{f.lang === 'python' ? 'Python' : 'JS'} · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span>
+              <span class="meta">{langLabel(f)} · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span>
               <button class="btn small-btn" onclick={() => removePending(f.path)} aria-label={'Remove ' + f.path}>✕</button>
             </li>
           {/each}
@@ -208,7 +211,7 @@
         <ul class="files">
           {#each app.workspace.files as f (f.path)}
             <li><span class="path">{f.path}</span>
-              <span class="meta">{f.lang === 'python' ? 'Python' : 'JS'} ({f.langSource}) · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span></li>
+              <span class="meta">{langLabel(f)} ({f.langSource}) · {fmt(f.lines)} lines{f.isTest ? ' · test' : ''}</span></li>
           {/each}
         </ul>
         <p class="muted small">

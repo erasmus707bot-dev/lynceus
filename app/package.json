@@ -32,6 +32,7 @@
     "@babel/core": "7.29.13",
     "@babel/parser": "7.29.13",
     "@babel/plugin-transform-modules-commonjs": "7.29.7",
+    "@babel/plugin-transform-typescript": "7.29.9",
     "@babel/traverse": "7.29.13",
     "fflate": "0.7.5",
     "istanbul-lib-instrument": "6.0.3"
@@ -43,6 +44,7 @@
     "@babel/helper-module-transforms": "7.29.13",
     "@babel/helper-string-parser": "7.29.13",
     "@babel/helpers": "7.29.13",
-    "@babel/types": "7.29.11"
+    "@babel/types": "7.29.11",
+    "@babel/helper-member-expression-to-functions": "7.29.7"
   }
 }

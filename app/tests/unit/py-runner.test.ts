@@ -3,6 +3,7 @@
 // Needs `npm run vendor` first (it downloads the pinned wheels into public/vendor/pyodide/wheels).
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { zipSync, strToU8 } from 'fflate';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { runPython } from '../../src/sandbox/py-host';
@@ -16,10 +17,10 @@ let loadPyodide: any;
 
 beforeAll(() => { loadPyodide = require('pyodide').loadPyodide; });
 
-async function run(files: Record<string, string>, testFiles: string[], skip: string[] = []) {
+async function run(files: Record<string, string>, testFiles: string[], skip: string[] = [], extra: Partial<RunInput> = {}) {
   const py = await loadPyodide({ indexURL: path.dirname(require.resolve('pyodide/package.json')) + '/' });
   const events: WorkerEvent[] = [];
-  const input: RunInput = { lang: 'python', files: Object.entries(files).map(([p, text]) => ({ path: p, text })), testFiles, skip, pyodideURL: '' };
+  const input: RunInput = { lang: 'python', files: Object.entries(files).map(([p, text]) => ({ path: p, text })), testFiles, skip, pyodideURL: '', ...extra };
   await runPython(py, input, (e) => events.push(e), { wheels, readWheel: async (w) => readFileSync(path.join(WHEELS_DIR, w)) });
   const results: Record<string, TestResult> = Object.fromEntries(events.filter((e) => e.type === 'result').map((e) => [(e as { result: TestResult }).result.id, (e as { result: TestResult }).result]));
   const done = events.find((e) => e.type === 'done') as Extract<WorkerEvent, { type: 'done' }>;
@@ -61,7 +62,7 @@ describe('Python runner (pytest + per-test coverage in Pyodide)', () => {
     const { results } = await run({ 'test_np.py': `import numpy\n\ndef test_x():\n    assert True\n` }, ['test_np.py']);
     const r = results['test_np.py::(load)'];
     expect(r.outcome).toBe('error');
-    expect(r.message).toMatch(/Missing package 'numpy'\. Package downloads are off in v1/);
+    expect(r.message).toMatch(/Missing package 'numpy'\. Package downloads are off/);
   }, 60000);
 
   it('reports skips, fixture errors, captured output, classes and deselected ids', async () => {
@@ -134,4 +135,15 @@ def test_urllib():
       expect(r.message, t).toMatch(/network blocked by Lynceus/);
     }
   }, 60000);
+
+  it('packages mode: a downloaded wheel is installed before the tests run, and the missing-package message says how to get more', async () => {
+    const tiny = zipSync({ 'tinypkg/__init__.py': strToU8('def triple(x):\n    return 3 * x\n'), 'tinypkg-1.0.dist-info/METADATA': strToU8('Name: tinypkg\nVersion: 1.0\n') });
+    const { results } = await run({
+      'test_pkg.py': 'import tinypkg\n\ndef test_triple():\n    assert tinypkg.triple(2) == 6\n\ndef test_other():\n    import yaml\n',
+    }, ['test_pkg.py'], [], { extraWheels: [{ file: 'tinypkg-1.0-py3-none-any.whl', data: tiny }], packagesMode: true });
+    const byName = Object.fromEntries(Object.values(results).map((r) => [r.name, r]));
+    expect(byName.test_triple.outcome).toBe('passed');
+    expect(byName.test_other.message).toMatch(/Missing package 'yaml'\. Package downloads are on: check the names under "Package downloads"/);
+  }, 120000);
 });
+
